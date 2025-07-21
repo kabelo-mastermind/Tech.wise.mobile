@@ -27,6 +27,8 @@ export default function TripDetails({ navigation, route }) {
   const [userCustomer, setUserCustomer] = useState(null);
   const [payment, setPayment] = useState(null)
   const [loadingData, setLoadingData] = useState(true)
+  const [generatingReceipt, setGeneratingReceipt] = useState(false)
+
   console.log("user driver:", userDriver);
 
   // Function to upload receipt to Firebase Storage
@@ -81,7 +83,7 @@ export default function TripDetails({ navigation, route }) {
   // Function to generate receipt as PDF and share it
   const generateReceipt = async () => {
     if (!trip || !payment) return;
-
+    setGeneratingReceipt(true);
     const htmlContent = `
    <html>
 <head>
@@ -264,7 +266,7 @@ export default function TripDetails({ navigation, route }) {
       Total Paid: R${payment.amount}
     </div>
     <span class="thanks">
-      🚗 Thank you for riding with Nthome!<br>
+      Thank you for riding with Nthome!<br>
       We hope your journey was delightful.<br>
       <span style="color:#438c8c; font-size:13px;">We look forward to seeing you again soon!</span>
     </span>
@@ -301,6 +303,8 @@ export default function TripDetails({ navigation, route }) {
 
     } catch (error) {
       console.error("❌ Error generating receipt:", error);
+    } finally {
+      setGeneratingReceipt(false);
     }
   };
 
@@ -599,8 +603,14 @@ export default function TripDetails({ navigation, route }) {
 
           {/* Receipt Button */}
           <TouchableOpacity style={styles.button} onPress={generateReceipt}>
-            <Receipt size={20} color="#000" />
-            <Text style={styles.buttonText}>Get receipt</Text>
+            {generatingReceipt ? (
+              <ActivityIndicator size="small" color="#000" />
+            ) : (
+              <>
+                <Receipt size={20} color="#000" />
+                <Text style={styles.buttonText}>Get receipt</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
