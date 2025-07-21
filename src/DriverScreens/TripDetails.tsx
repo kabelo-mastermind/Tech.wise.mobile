@@ -291,33 +291,19 @@ export default function TripDetails({ navigation, route }) {
 
       // Send to backend for email dispatch
       await axios.post(`${api}send-receipt`, {
-        email: userDriver.email,
-        name: userDriver.name,
+        email: userCustomer?.email,
+        name: userCustomer?.name,
         tripId,
         receiptUrl: downloadURL,
       });
       console.log("✅ Receipt email request sent to backend.");
-
-      // Optionally share the PDF on device
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: `Nthome Trip Receipt ${tripId}`,
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        alert("Sharing not available on this device.");
-      }
+      alert("Receipt generated and sent to your email successfully!");
 
     } catch (error) {
       console.error("❌ Error generating receipt:", error);
     }
   };
 
-
-
-
-  // Fetch trip and related data when component mounts
   // This will fetch trip details, driver details, customer details, and payment details
   useEffect(() => {
     const fetchTripAndRelatedData = async () => {
