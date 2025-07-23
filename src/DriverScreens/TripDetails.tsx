@@ -293,8 +293,8 @@ export default function TripDetails({ navigation, route }) {
 
       // Send to backend for email dispatch
       await axios.post(`${api}send-receipt`, {
-        email: userCustomer?.email,
-        name: userCustomer?.name,
+        email: userDriver?.email,
+        name: userDriver?.name,
         tripId,
         receiptUrl: downloadURL,
       });
