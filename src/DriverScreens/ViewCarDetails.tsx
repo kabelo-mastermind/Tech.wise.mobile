@@ -285,14 +285,14 @@ const ViewCarDetails = ({ navigation }) => {
         ListFooterComponent={() => (
           <View style={styles.footerButtonsContainer}>
             {/* Edit Button */}
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={[styles.editButton, !selectedCarObject && styles.actionButtonDisabled]}
               onPress={handleEditPress}
               disabled={!selectedCarObject}
             >
               <Ionicons name="pencil-outline" size={20} color="#fff" style={styles.editIcon} />
               <Text style={styles.editButtonText}>Edit Car Details</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             {/* Delete Button */}
             <TouchableOpacity
               style={[

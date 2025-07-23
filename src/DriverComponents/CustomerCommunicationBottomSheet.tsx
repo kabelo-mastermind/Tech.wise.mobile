@@ -6,90 +6,90 @@ import { Picker } from '@react-native-picker/picker'; // Import Picker for dropd
 import { Icon } from 'react-native-elements';
 import { useSelector } from 'react-redux';
 
-const CustomerCommunicationBottomSheet = ({ navigation ,route}) => {
+const CustomerCommunicationBottomSheet = ({ navigation, route }) => {
   const sheetRef = useRef(null);
   const [tripId, setTripId] = useState(null);
   const [customerId, setCustomerId] = useState(null);
-//   const customer_id = useSelector((state) => state.trip.tripData?.customerId || "");
-//   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "");
-  
-
-//   const tripData = useSelector((state) => state.trip.tripData);
-// console.log("tripData from Redux:", tripData);
-
-//   console.log("CustomerCommunicationBottomSheet customer_id:", customer_id);
-// console.log("CustomerCommunicationBottomSheet trip_id:", trip_id);
+  //   const customer_id = useSelector((state) => state.trip.tripData?.customerId || "");
+  //   const trip_id = useSelector((state) => state.trip.tripData?.tripId || "");
 
 
-useEffect(() => {
-  const { tripId, customerId } = route?.params || {};
-  setTripId(tripId);
-  setCustomerId(customerId);
-  console.log("CustomerCommunicationBottomSheet tripId:", tripId);
-  console.log("CustomerCommunicationBottomSheet customerId:", customerId);
-}, []);
+  //   const tripData = useSelector((state) => state.trip.tripData);
+  // console.log("tripData from Redux:", tripData);
 
-  const snapPoints = [ '20%']; // Example snap points, adjust as needed
+  //   console.log("CustomerCommunicationBottomSheet customer_id:", customer_id);
+  // console.log("CustomerCommunicationBottomSheet trip_id:", trip_id);
+
+
+  useEffect(() => {
+    const { tripId, customerId } = route?.params || { tripId: '349', customerId: '31' };
+    setTripId(tripId);
+    setCustomerId(customerId);
+    console.log("CustomerCommunicationBottomSheet tripId:", tripId);
+    console.log("CustomerCommunicationBottomSheet customerId:", customerId);
+  }, []);
+
+  const snapPoints = ['30%']; // Example snap points, adjust as needed
   const handleChatPress = () => {
     navigation.navigate('DriverChat', {
       trip_id: tripId,
       customer_id: customerId,
     });
-    
-      //  trip_id, customer_id });
+
+    //  trip_id, customer_id });
   };
-  
-   
+
+
 
   return (
     <View style={styles.container}>
-    {/* Overlay to close Bottom Sheet */}
-    <Pressable onPress={() => navigation.goBack()} style={styles.overlay} />
-    <BottomSheet
-      ref={sheetRef}
-      snapPoints={snapPoints}
-      index={0} // Initial snap point
-      enablePanDownToClose={false}
-      onClose={() => navigation.goBack()}
-      style={styles.bottomSheet}
-    >
-      {/* Header Section */}
-      <View style={styles.headerContainer}>
-        <Text style={styles.headerText}>Driver Communication</Text>
-      </View>
+      {/* Overlay to close Bottom Sheet */}
+      <Pressable onPress={() => navigation.goBack()} style={styles.overlay} />
+      <BottomSheet
+        ref={sheetRef}
+        snapPoints={snapPoints}
+        index={0} // Initial snap point
+        enablePanDownToClose={false}
+        onClose={() => navigation.goBack()}
+        style={styles.bottomSheet}
+      >
+        {/* Header Section */}
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerText}>Driver Communication</Text>
+        </View>
 
-      {/* Icons for Chat, Call, and Safety */}
-      <View style={styles.iconContainer}>
-        {/* Chat Icon */}
-        <TouchableOpacity style={styles.iconCircle} onPress={handleChatPress}>
-  <Icon name="chat" type="material" size={30} color="#fff" />
-</TouchableOpacity>
+        {/* Icons for Chat, Call, and Safety */}
+        <View style={styles.iconContainer}>
+          {/* Chat Icon */}
+          <TouchableOpacity style={styles.iconCircle} onPress={handleChatPress}>
+            <Icon name="chat" type="material" size={30} color="#fff" />
+          </TouchableOpacity>
 
 
-        {/* Call Icon */}
-        <TouchableOpacity style={styles.iconCircle}>
+          {/* Call Icon */}
+          {/* <TouchableOpacity style={styles.iconCircle}>
           <Icon name="call" type="material" size={30} color="#fff" />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        {/* Safety Icon */}
-        <TouchableOpacity style={styles.iconCircle}>
-          <Icon name="shield" type="material" size={30} color="#fff" />
-        </TouchableOpacity>
-      </View>
+          {/* Safety Icon */}
+          <TouchableOpacity style={styles.iconCircle} onPress={() => navigation.navigate('support')}>
+            <Icon name="shield" type="material" size={30} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
-    </BottomSheet>
+      </BottomSheet>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.3)', // Semi-transparent overlay
-       },
-       overlay: {
-        flex: 1,
-      },
+  container: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Semi-transparent overlay
+  },
+  overlay: {
+    flex: 1,
+  },
   bottomSheet: {
     backgroundColor: 'white',
     borderRadius: 16,

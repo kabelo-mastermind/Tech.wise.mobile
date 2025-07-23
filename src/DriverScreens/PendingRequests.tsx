@@ -778,7 +778,7 @@ export default function PendingRequests({ navigation, route }) {
       {/* Action Buttons */}
 
       <View style={styles.actionButtonsContainer}>
-        {tripStatusAccepted !== "on-going" && tripStatusAccepted !== "accepted" && (
+        {tripStatusAccepted === "accepted" && (
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() =>
