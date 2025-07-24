@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   SafeAreaView,
-  StatusBar, // Import StatusBar
+  StatusBar,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import CustomDrawer from "../components/CustomDrawer"
@@ -20,9 +20,7 @@ import { useSelector } from "react-redux"
 import axios from "axios"
 import { api } from "../../api"
 import * as FileSystem from "expo-file-system"
-import { WebView } from "react-native-webview" // Import WebView
-
-// Removed THEME object for consistency with ViewCarDetails.tsx
+import { WebView } from "react-native-webview"
 
 const documentLabels = {
   id_copy: "ID Copy",
@@ -30,7 +28,6 @@ const documentLabels = {
   pdp: "PDP",
   car_inspection: "Car Inspection",
   driver_license: "Driver's License",
-  // Add other document types as needed
 }
 
 const getDocumentLabel = (key) => {
@@ -51,7 +48,6 @@ const formatDate = (dateString) => {
     if (isNaN(date.getTime())) {
       return "Invalid Date"
     }
-    // Format to "DD MMM YYYY" like "08 Dec 2021"
     return date
       .toLocaleDateString("en-US", {
         day: "2-digit",
@@ -59,7 +55,7 @@ const formatDate = (dateString) => {
         year: "numeric",
       })
       .replace(/\./g, "")
-      .replace(/,/, "") // Remove periods and commas
+      .replace(/,/, "")
   } catch (e) {
     return "N/A"
   }
@@ -70,7 +66,7 @@ const ViewDocuments = ({ navigation }) => {
   const [documents, setDocuments] = useState({})
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
-  const [pdfUrlToView, setPdfUrlToView] = useState<string | null>(null) // State to hold PDF URL for WebView
+  const [pdfUrlToView, setPdfUrlToView] = useState<string | null>(null)
 
   const user = useSelector((state) => state.auth.user)
   const user_id = user?.user_id || null
@@ -103,31 +99,24 @@ const ViewDocuments = ({ navigation }) => {
       return
     }
 
-    // Check if it's a PDF
     if (url.toLowerCase().endsWith(".pdf")) {
       setDownloading(true)
       try {
-        // 1. Extract filename without query parameters
         const urlParts = url.split("/")
         const filenameWithQuery = urlParts[urlParts.length - 1]
-        const filename = filenameWithQuery.split("?")[0] // Get filename before any '?'
+        const filename = filenameWithQuery.split("?")[0]
 
-        // 2. Define a specific subdirectory within cache for your app's documents
         const appDocumentsDir = FileSystem.cacheDirectory + "my_app_documents/"
         const localUri = appDocumentsDir + filename
 
-        // 3. Ensure the app-specific directory exists
         const dirInfo = await FileSystem.getInfoAsync(appDocumentsDir)
         if (!dirInfo.exists) {
           console.log("Creating directory:", appDocumentsDir)
           await FileSystem.makeDirectoryAsync(appDocumentsDir, { intermediates: true })
         }
 
-        // 4. Download the file
         const { uri } = await FileSystem.downloadAsync(url, localUri)
         console.log("Finished downloading to ", uri)
-
-        // 5. Set the URI for WebView to display the PDF
         setPdfUrlToView(uri)
       } catch (error) {
         console.error("Error downloading or opening document:", error)
@@ -135,12 +124,11 @@ const ViewDocuments = ({ navigation }) => {
           "Error",
           "Could not open document. Please ensure you have an app to handle this file type or try again.",
         )
-        setPdfUrlToView(null) // Clear PDF viewer on error
+        setPdfUrlToView(null)
       } finally {
         setDownloading(false)
       }
     } else {
-      // For other file types, use Linking.openURL
       Linking.openURL(url).catch((err) => {
         console.error("Failed to open URL:", err)
         Alert.alert("Error", "Could not open document. Please ensure you have an app to handle this file type.")
@@ -157,19 +145,19 @@ const ViewDocuments = ({ navigation }) => {
     )
   }
 
-  // If pdfUrlToView is set, render the WebView
   if (pdfUrlToView) {
     return (
       <SafeAreaView style={styles.container}>
-        {" "}
-        {/* Use consistent container style */}
         <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
         <View style={styles.pdfViewerHeader}>
-          <TouchableOpacity onPress={() => setPdfUrlToView(null)} style={styles.pdfViewerCloseButton}>
-            <Ionicons name="close" size={28} color="#212529" /> {/* Consistent text color */}
+          <TouchableOpacity 
+            onPress={() => setPdfUrlToView(null)} 
+            style={styles.pdfViewerCloseButton}
+          >
+            <Ionicons name="close" size={28} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.pdfViewerTitle}>Document Viewer</Text>
-          <View style={styles.headerRightPlaceholder} /> {/* For alignment */}
+          <View style={styles.headerRightPlaceholder} />
         </View>
         {downloading ? (
           <View style={styles.loadingContainer}>
@@ -180,18 +168,18 @@ const ViewDocuments = ({ navigation }) => {
           <WebView
             source={{ uri: pdfUrlToView }}
             style={styles.webView}
-            originWhitelist={["file://*", "http://*", "https://*"]} // Allow local files and web content
+            originWhitelist={["file://*", "http://*", "https://*"]}
             javaScriptEnabled={true}
             domStorageEnabled={true}
-            allowFileAccess={true} // Required for local file access on Android
-            allowUniversalAccessFromFileURLs={true} // Required for local file access on iOS
+            allowFileAccess={true}
+            allowUniversalAccessFromFileURLs={true}
             onLoadStart={() => setDownloading(true)}
             onLoadEnd={() => setDownloading(false)}
             onError={(syntheticEvent) => {
               const { nativeEvent } = syntheticEvent
               console.warn("WebView error: ", nativeEvent)
               Alert.alert("Error", "Could not load PDF. Please try again.")
-              setPdfUrlToView(null) // Go back to list on error
+              setPdfUrlToView(null)
             }}
           />
         )}
@@ -199,76 +187,89 @@ const ViewDocuments = ({ navigation }) => {
     )
   }
 
-  // Define the specific keys to display
   const allowedDocumentKeys = ["id_copy", "police_clearance", "pdp", "car_inspection", "driver_license"]
 
-  // Transform the flat documents object into an array for list display
   const documentsToDisplay = Object.entries(documents)
     .filter(([key, url]) => allowedDocumentKeys.includes(key) && url && typeof url === "string")
     .map(([key, url]) => ({
-      id: key, // Use key as ID
+      id: key,
       title: getDocumentLabel(key),
       url: url,
-      uploadedAt: documents.document_upload_time, // Use document_upload_time for all
+      uploadedAt: documents.document_upload_time,
     }))
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
 
-      {/* Custom Header */}
+      {/* Header with modern styling */}
       <View style={styles.header}>
         <TouchableOpacity onPress={toggleDrawer} style={styles.menuButton}>
-          {" "}
-          {/* Changed to menuButton style */}
-          <Icon type="material-community" name="menu" color="#0F172A" size={24} />
+          <Ionicons name="menu" size={28} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>View Documents</Text>
-        {/* Placeholder for right side if needed for balance */}
+        <Text style={styles.headerTitle}>My Documents</Text>
         <View style={styles.headerRightPlaceholder} />
       </View>
 
-      {/* Document List */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {" "}
-        {/* Changed to scrollContent style */}
-        {/* Instructions for viewing and replacing documents */}
+      {/* Document List with improved card design */}
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.instructionsContainer}>
-          <Text style={styles.instructionsTitle}>How to Manage Your Documents:</Text>
-          <Text style={styles.instructionsText}>
-            • To view a document, simply tap on its name in the list. PDFs will open directly within the app. Other file
-            types will attempt to open with your device's default application.
-          </Text>
-          <Text style={styles.instructionsText}>
-            • To replace any of your documents, you must re-upload ALL required documents using the "UPLOAD DOCUMENTS"
-            button below. This will update your entire document set.
-          </Text>
+          <Text style={styles.instructionsTitle}>Document Management</Text>
+          <View style={styles.instructionItem}>
+            <Ionicons name="eye-outline" size={18} color="#0DCAF0" style={styles.instructionIcon} />
+            <Text style={styles.instructionsText}>
+              Tap on a document to view it. PDFs open in-app, others use your device's default app.
+            </Text>
+          </View>
+          <View style={styles.instructionItem}>
+            <Ionicons name="refresh-outline" size={18} color="#0DCAF0" style={styles.instructionIcon} />
+            <Text style={styles.instructionsText}>
+              To update documents, use the UPLOAD button below to replace all documents at once.
+            </Text>
+          </View>
         </View>
+
         {documentsToDisplay.length > 0 ? (
           documentsToDisplay.map((doc) => (
-            <TouchableOpacity key={doc.id} style={styles.docListItem} onPress={() => handleOpenDocument(doc.url)}>
+            <TouchableOpacity 
+              key={doc.id} 
+              style={styles.docListItem} 
+              onPress={() => handleOpenDocument(doc.url)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.docIconContainer}>
+                <Ionicons name="document-text-outline" size={24} color="#0DCAF0" />
+              </View>
               <View style={styles.docTextContent}>
                 <Text style={styles.docItemTitle}>{doc.title}</Text>
-                <Text style={styles.docItemDate}>{formatDate(doc.uploadedAt)}</Text>
+                <Text style={styles.docItemDate}>Uploaded: {formatDate(doc.uploadedAt)}</Text>
               </View>
               <View style={styles.docRightContent}>
-                <TouchableOpacity style={styles.optionsButton}>
-                  <Ionicons name="ellipsis-vertical" size={20} color="#6c757d" /> {/* Consistent text color */}
-                </TouchableOpacity>
+                <Ionicons name="chevron-forward" size={20} color="#9E9E9E" />
               </View>
             </TouchableOpacity>
           ))
         ) : (
           <View style={styles.noDocumentsContainer}>
-            <Ionicons name="document-text-outline" size={60} color="#6c757d" /> {/* Consistent text color */}
-            <Text style={styles.noDocumentsText}>No documents uploaded yet.</Text>
-            <Text style={styles.noDocumentsSubText}>Please upload your required documents.</Text>
+            <View style={styles.emptyStateIcon}>
+              <Ionicons name="document-text-outline" size={60} color="#E0E0E0" />
+            </View>
+            <Text style={styles.noDocumentsText}>No documents uploaded</Text>
+            <Text style={styles.noDocumentsSubText}>Please upload your required documents to continue</Text>
           </View>
         )}
       </ScrollView>
 
-      {/* Floating Create Document Button */}
-      <TouchableOpacity style={styles.createDocumentButton} onPress={() => navigation.navigate("UploadDocuments")}>
+      {/* Floating action button with modern styling */}
+      <TouchableOpacity 
+        style={styles.createDocumentButton} 
+        onPress={() => navigation.navigate("UploadDocuments")}
+        activeOpacity={0.9}
+      >
+        <Ionicons name="cloud-upload-outline" size={22} color="#FFFFFF" style={styles.uploadIcon} />
         <Text style={styles.createDocumentButtonText}>UPLOAD DOCUMENTS</Text>
       </TouchableOpacity>
 
@@ -280,191 +281,213 @@ const ViewDocuments = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa", // Consistent background
+    backgroundColor: "#F8F9FB",
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f8f9fa", // Consistent background
+    backgroundColor: "#F8F9FB",
   },
   loadingText: {
-    marginTop: 10,
-    color: "#6c757d", // Consistent text color
+    marginTop: 16,
+    color: "#666",
     fontSize: 16,
+    fontFamily: 'Inter-Medium',
   },
-  // Header (consistent with ViewCarDetails)
+  // Header styling
   header: {
-    backgroundColor: "#0DCAF0", // Consistent header background
+    backgroundColor: "#0DCAF0",
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 16,
-    paddingHorizontal: 16,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingHorizontal: 20,
+    elevation: 0,
+    shadowOpacity: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
   },
   menuButton: {
-    // Consistent menu button style
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F1F5F9",
-    alignItems: "center",
-    justifyContent: "center",
+    padding: 4,
+    marginRight: 8,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: "bold",
-    color: "#fff", // Consistent header title color
-    flex: 1, // Allows title to take available space
-    textAlign: "center", // Centers the title
-    marginRight: 40, // Offset for menu button
+    fontWeight: "600",
+    color: "#FFFFFF",
+    fontFamily: 'Inter-SemiBold',
+    flex: 1,
+    textAlign: "center",
   },
   headerRightPlaceholder: {
-    width: 24, // To balance the menu icon on the left
-    height: 24,
-    // No position absolute needed if headerTitle takes flex:1 and pushes it
+    width: 32,
   },
-  // PDF Viewer Header (consistent with ViewCarDetails header)
+  // PDF Viewer Header
   pdfViewerHeader: {
-    backgroundColor: "#0DCAF0", // Consistent header background
+    backgroundColor: "#0DCAF0",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16, // Consistent padding
+    paddingHorizontal: 16,
     height: 60,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
   },
   pdfViewerCloseButton: {
-    padding: 5,
+    padding: 6,
   },
   pdfViewerTitle: {
-    fontSize: 20, // Consistent font size
-    fontWeight: "bold",
-    color: "#fff", // Consistent title color
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    fontFamily: 'Inter-SemiBold',
     flex: 1,
     textAlign: "center",
-    marginRight: 40, // Offset for close button
   },
-  // Document List (consistent with ViewCarDetails scrollContent)
+  // Document List
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 16, // Consistent padding
-    paddingTop: 20, // Consistent padding
-    paddingBottom: 100, // Space for floating button
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 100,
   },
-  docListItem: {
-    backgroundColor: "#fff", // Consistent card background
-    borderRadius: 16, // Consistent border radius
-    padding: 15,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    shadowColor: "#000", // Consistent shadow
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  docTextContent: {
-    flex: 1,
-    marginRight: 10,
-  },
-  docItemTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#212529", // Consistent text color
-    marginBottom: 3,
-  },
-  docItemDate: {
-    fontSize: 13,
-    color: "#6c757d", // Consistent text color
-    marginTop: 2, // Small margin to separate from title
-  },
-  docRightContent: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  optionsButton: {
-    padding: 5,
-  },
-  // No Documents State (consistent with ViewCarDetails noCarContent)
-  noDocumentsContainer: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 40,
-  },
-  noDocumentsText: {
-    fontSize: 20, // Consistent font size
-    fontWeight: "bold",
-    color: "#212529", // Consistent text color
-    marginTop: 15,
-    textAlign: "center",
-  },
-  noDocumentsSubText: {
-    fontSize: 16, // Consistent font size
-    color: "#6c757d", // Consistent text color
-    marginTop: 5,
-    textAlign: "center",
-  },
-  // Instructions (consistent with ViewCarDetails instructionsContainer)
   instructionsContainer: {
-    backgroundColor: "#fff", // Consistent card background
-    borderRadius: 16, // Consistent border radius
-    padding: 15,
-    marginTop: 0,
-    marginBottom: 20, // Consistent margin
-    shadowColor: "#000", // Consistent shadow
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   instructionsTitle: {
     fontSize: 16,
-    fontWeight: "bold",
-    color: "#212529", // Consistent text color
-    marginBottom: 10,
+    fontWeight: "600",
+    color: "#333",
+    fontFamily: 'Inter-SemiBold',
+    marginBottom: 12,
+  },
+  instructionItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  instructionIcon: {
+    marginRight: 8,
+    marginTop: 2,
   },
   instructionsText: {
     fontSize: 14,
-    color: "#6c757d", // Consistent text color
-    marginBottom: 5,
+    color: "#666",
+    fontFamily: 'Inter-Regular',
+    flex: 1,
     lineHeight: 20,
   },
-  // Floating Create Document Button (consistent with ViewCarDetails editButton)
+  docListItem: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+  },
+  docIconContainer: {
+    backgroundColor: "#F0F5FF",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  docTextContent: {
+    flex: 1,
+  },
+  docItemTitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#333",
+    fontFamily: 'Inter-Medium',
+    marginBottom: 4,
+  },
+  docItemDate: {
+    fontSize: 13,
+    color: "#888",
+    fontFamily: 'Inter-Regular',
+  },
+  docRightContent: {
+    marginLeft: 8,
+  },
+  // Empty state
+  noDocumentsContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyStateIcon: {
+    backgroundColor: "#F8F9FB",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  noDocumentsText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#555",
+    fontFamily: 'Inter-SemiBold',
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  noDocumentsSubText: {
+    fontSize: 14,
+    color: "#999",
+    fontFamily: 'Inter-Regular',
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  // Floating action button
   createDocumentButton: {
     position: "absolute",
-    bottom: 20,
-    left: 16, // Consistent horizontal padding
-    right: 16, // Consistent horizontal padding
-    backgroundColor: "#0DCAF0", // Consistent button color
-    paddingVertical: 16, // Consistent padding
-    borderRadius: 12, // Consistent border radius
+    bottom: 24,
+    left: 20,
+    right: 20,
+    backgroundColor: "#0DCAF0",
+    paddingVertical: 16,
+    borderRadius: 12,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000", // Consistent shadow
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowColor: "#0DCAF0",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  uploadIcon: {
+    marginRight: 8,
   },
   createDocumentButtonText: {
-    color: "#fff", // Consistent text color
-    fontSize: 16, // Consistent font size
-    fontWeight: "bold",
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+    fontFamily: 'Inter-SemiBold',
   },
-  // WebView specific styles
+  // WebView
   webView: {
     flex: 1,
-    backgroundColor: "#f8f9fa", // Consistent background
+    backgroundColor: "#F8F9FB",
   },
 })
 

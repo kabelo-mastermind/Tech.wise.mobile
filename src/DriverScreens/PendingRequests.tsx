@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { StyleSheet, View, Dimensions, TouchableOpacity, Text, Animated } from "react-native"
+import { StyleSheet, View, Dimensions, TouchableOpacity, Text, Animated, Linking, Alert } from "react-native"
 import { Icon } from "react-native-elements"
 import { colors } from "../global/styles"
 import MapComponent from "../components/MapComponent"
@@ -28,6 +28,8 @@ import { setMessageData } from "../redux/actions/messageAction"
 import { formatTime } from "../utils/timeTracker"
 import CancelAlertModal from "../components/CancelAlertModal"
 import RideRatingModal from "./RideRatingScreen"
+import { Ionicons } from '@expo/vector-icons';
+
 
 const SCREEN_HEIGHT = Dimensions.get("window").height
 const SCREEN_WIDTH = Dimensions.get("window").width
@@ -307,7 +309,7 @@ export default function PendingRequests({ navigation, route }) {
       })
     }
 
-    if (tripRequestSocket?.dropOffLocation) {
+    if (tripRequestSocket?.dropOffLocation && tripStarted) {
       setUserDestination({
         latitude: tripRequestSocket.dropOffLatitude,
         longitude: tripRequestSocket.dropOffLongitude,
@@ -386,6 +388,39 @@ export default function PendingRequests({ navigation, route }) {
     const seconds = Math.floor(timeInSeconds % 60)
     return `${minutes} min ${seconds} sec`
   }
+
+
+  const openNavigation = async (origin, destination, app = 'google') => {
+    const { latitude: oLat, longitude: oLng } = origin;
+    const { latitude: dLat, longitude: dLng } = destination;
+
+    if (!oLat || !oLng || !dLat || !dLng) {
+      Alert.alert('Invalid locations');
+      return;
+    }
+
+    let url = '';
+
+    if (app === 'google') {
+      url = `https://www.google.com/maps/dir/?api=1&origin=${oLat},${oLng}&destination=${dLat},${dLng}&travelmode=driving`;
+    } else if (app === 'waze') {
+      url = `https://waze.com/ul?ll=${dLat},${dLng}&navigate=yes`;
+    } else {
+      Alert.alert('Unsupported navigation app');
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert(`Cannot open the ${app} URL`);
+      }
+    } catch (err) {
+      Alert.alert('Failed to open navigation: ' + err.message);
+    }
+  };
 
   const [animationValue] = useState(new Animated.Value(1))
   const [isOnline, setIsOnline] = useState(true)
@@ -470,7 +505,7 @@ export default function PendingRequests({ navigation, route }) {
 
   //if trip is declined it should reset user origin
   useEffect(() => {
-    if (tripStatusAccepted === "declined") {
+    if (tripStatusAccepted === "declined" || tripStatusAccepted === "no-response") {
       setUserOrigin({ latitude: null, longitude: null })
       setUserDestination({ latitude: null, longitude: null })
     }
@@ -778,6 +813,7 @@ export default function PendingRequests({ navigation, route }) {
       {/* Action Buttons */}
 
       <View style={styles.actionButtonsContainer}>
+        {/* Phone Button (Existing) */}
         {tripStatusAccepted === "accepted" && (
           <TouchableOpacity
             style={styles.actionButton}
@@ -797,8 +833,27 @@ export default function PendingRequests({ navigation, route }) {
           </TouchableOpacity>
         )}
 
-        {tripStatusAccepted !== "on-going" && tripStatusAccepted !== "accepted" && (
+        {/* Navigation Buttons (New) */}
+        {/* {tripStatusAccepted === "accepted" && (
+          <>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#4285F4' }]}
+              onPress={() => openNavigation(driverLocation, userOrigin, 'google')}
+            >
+              <Ionicons name="logo-google" size={20} color="white" />
+            </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#33CCFF' }]}
+              onPress={() => openNavigation(driverLocation, userOrigin, 'waze')}
+            >
+              <Ionicons name="car-sport" size={20} color="white" />
+            </TouchableOpacity>
+          </>
+        )} */}
+
+        {/* Bell Button (Existing) */}
+        {tripStatusAccepted !== "on-going" && tripStatusAccepted !== "accepted" && (
           <Animated.View style={[{ transform: [{ scale: bellAnimation }] }]}>
             <TouchableOpacity style={styles.actionButton} onPress={handleNotificationClick}>
               <Icon type="material-community" name="bell" color="#FFFFFF" size={24} />
@@ -810,6 +865,8 @@ export default function PendingRequests({ navigation, route }) {
             </TouchableOpacity>
           </Animated.View>
         )}
+
+        {/* Cancel Button (Existing) */}
         {tripStatusAccepted === "accepted" && !tripStarted && (
           <TouchableOpacity style={styles.actionButton} onPress={handleCancelTrip}>
             <Icon type="material-community" name="close-circle" color="#FFFFFF" size={24} />
@@ -818,13 +875,35 @@ export default function PendingRequests({ navigation, route }) {
       </View>
       {/* <Text>ETA: {eta}</Text>
       <Text>Distance: {distance}</Text> */}
+      {/* Start Trip Button */}
       {showStartButton && tripStatusAccepted !== "on-going" && tripStatusAccepted !== "canceled" && (
-        <TouchableOpacity style={styles.startButton} onPress={handleStartTrip}>
-          <Text style={styles.buttonText}>Start Trip</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={styles.startButton} onPress={handleStartTrip}>
+            <Text style={styles.buttonText}>Start Trip</Text>
+          </TouchableOpacity>
+
+          {/* Navigation Buttons - Only show when trip is accepted but not completed */}
+          {(tripStatusAccepted === "accepted" || tripStatusAccepted === "on-going") && (
+            <View style={styles.navButtonsContainer}>
+              <TouchableOpacity
+                style={[styles.navButton, styles.googleButton]}
+                onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
+              >
+                <Ionicons name="logo-google" size={20} color="white" />
+                <Text style={styles.navButtonText}>Maps</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.navButton, styles.wazeButton]}
+                onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
+              >
+                <Ionicons name="car-sport" size={20} color="white" />
+                <Text style={styles.navButtonText}>Waze</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
-
-
       {showEndButton && (
         <TouchableOpacity style={styles.endRideButton} onPress={handleEndRide}>
           <Text style={styles.endRideButtonText}>End Ride</Text>
@@ -996,6 +1075,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     marginLeft: 8,
+  },
+
+  navButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+    gap: 10,
+  },
+  navButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    minWidth: 100,
+  },
+  googleButton: {
+    backgroundColor: '#4285F4',
+  },
+  wazeButton: {
+    backgroundColor: '#33CCFF',
+  },
+  navButtonText: {
+    color: 'white',
+    marginLeft: 6,
+    fontWeight: '500',
+    fontSize: 14,
   },
   profilePictureContainer: {
     position: "absolute",

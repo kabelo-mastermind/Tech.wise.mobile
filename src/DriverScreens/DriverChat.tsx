@@ -122,7 +122,7 @@ const DriverChat = () => {
       <FlatList
         ref={flatListRef}
         data={messages}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => item.id?.toString()}
         renderItem={({ item }) => (
           <View style={[
             styles.messageBubble, 

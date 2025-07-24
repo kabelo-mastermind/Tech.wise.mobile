@@ -268,7 +268,7 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.button, styles.acceptButton]}
+                  style={[styles.button, styles.acceptButton]} 
                   onPress={handleAccept}
                   activeOpacity={0.8}
                 >
