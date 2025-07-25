@@ -1,6 +1,6 @@
 // redux/reducers/tripReducer.js
 const initialState = {
-  tripData: null,
+  tripData: {},
   selectedRequest: null, // Add this line
 };
 
@@ -9,7 +9,10 @@ const tripReducer = (state = initialState, action) => {
     case 'SET_TRIP_DATA':
       return {
         ...state,
-        tripData: action.payload,
+        tripData: {
+          ...state.tripData,
+          ...action.payload,
+        },
       };
     case 'SET_SELECTED_REQUEST':
       return {

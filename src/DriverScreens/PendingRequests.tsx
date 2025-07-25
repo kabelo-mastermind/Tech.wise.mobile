@@ -279,8 +279,8 @@ export default function PendingRequests({ navigation, route }) {
       // Dispatch user details to Redux
       dispatch(
         setTripData({
-          id: tripData.id, // Make sure we're using the correct property
-          customer_id: tripData.customerId,
+          id: tripData.tripId, // Make sure we're using the correct property
+          customer_id: tripData.user_id,
         }),
       )
     })
