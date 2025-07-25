@@ -29,6 +29,7 @@ import { formatTime } from "../utils/timeTracker"
 import CancelAlertModal from "../components/CancelAlertModal"
 import RideRatingModal from "./RideRatingScreen"
 import { Ionicons } from '@expo/vector-icons';
+import TripRequestModal from "../DriverComponents/Modals/TripRequestModal"
 
 
 const SCREEN_HEIGHT = Dimensions.get("window").height
@@ -50,6 +51,8 @@ export default function PendingRequests({ navigation, route }) {
   const [tripStarted, setTripStarted] = useState(false)
   const selectedRequest = useSelector((state) => state.trip.selectedRequest)
   const session_id = selectedRequest?.session_id;
+  const [modalVisible, setModalVisible] = useState(false);
+
   // console.log("Selected Request from Redux in driverStates session_id:", selectedRequest)
   // const openDrawer = route.params?.openDrawer
   // const state = route.params?.newState
@@ -778,6 +781,10 @@ export default function PendingRequests({ navigation, route }) {
   // Add a mapRef to access the map from MapComponent
   const mapRef = useRef(null)
 
+  const handleViewCustomer = () => {
+    setModalVisible(true);
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -833,25 +840,6 @@ export default function PendingRequests({ navigation, route }) {
           </TouchableOpacity>
         )}
 
-        {/* Navigation Buttons (New) */}
-        {/* {tripStatusAccepted === "accepted" && (
-          <>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#4285F4' }]}
-              onPress={() => openNavigation(driverLocation, userOrigin, 'google')}
-            >
-              <Ionicons name="logo-google" size={20} color="white" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#33CCFF' }]}
-              onPress={() => openNavigation(driverLocation, userOrigin, 'waze')}
-            >
-              <Ionicons name="car-sport" size={20} color="white" />
-            </TouchableOpacity>
-          </>
-        )} */}
-
         {/* Bell Button (Existing) */}
         {tripStatusAccepted !== "on-going" && tripStatusAccepted !== "accepted" && (
           <Animated.View style={[{ transform: [{ scale: bellAnimation }] }]}>
@@ -873,8 +861,7 @@ export default function PendingRequests({ navigation, route }) {
           </TouchableOpacity>
         )}
       </View>
-      {/* <Text>ETA: {eta}</Text>
-      <Text>Distance: {distance}</Text> */}
+
       {/* Start Trip Button */}
       {showStartButton && tripStatusAccepted !== "on-going" && tripStatusAccepted !== "canceled" && (
         <>
@@ -891,6 +878,13 @@ export default function PendingRequests({ navigation, route }) {
               >
                 <Ionicons name="logo-google" size={20} color="white" />
                 <Text style={styles.navButtonText}>Maps</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.customerNav, styles.customerButton]}
+                onPress={() => handleViewCustomer()}
+              >
+                <Ionicons name="person" size={20} color="white" />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -925,6 +919,13 @@ export default function PendingRequests({ navigation, route }) {
         tripId={ratingTripId}
         userId={ratingUserId}
       />
+
+      <TripRequestModal
+        onClose={() => setModalVisible(false)}
+        isVisible={modalVisible}
+        hideActions={true}  // <-- hide buttons and reason input
+      />
+
 
     </SafeAreaView>
   )
@@ -1080,8 +1081,9 @@ const styles = StyleSheet.create({
   navButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 10,
-    gap: 10,
+    marginTop: 15,
+    marginBottom: 20,
+    gap: 20,
   },
   navButton: {
     flexDirection: 'row',
@@ -1091,11 +1093,22 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     minWidth: 100,
   },
+  customerNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    minWidth: 10,
+  },
   googleButton: {
     backgroundColor: '#4285F4',
   },
   wazeButton: {
     backgroundColor: '#33CCFF',
+  },
+  customerButton: {
+    backgroundColor: '#82fab0ff',
   },
   navButtonText: {
     color: 'white',

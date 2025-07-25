@@ -22,12 +22,12 @@ import { emitAcceptTrip, emitCancelTrip } from "../../configSocket/socketConfig"
 import { useSelector } from "react-redux"
 import { useDispatch } from 'react-redux';
 import { setSelectedRequest } from "../../redux/actions/tripActions"
- // Adjust the import path as necessary
+// Adjust the import path as necessary
 
 
 const { width, height } = Dimensions.get("window")
 
-const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
+const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate, hideActions = false }) => {
   const navigation = useNavigation()
   const [customerDetails, setCustomerDetails] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -170,7 +170,7 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
         <Animated.View style={[styles.modalContainer, { transform: [{ translateY: slideAnim }] }]}>
           <View style={styles.modalHeader}>
             <View style={styles.headerHandle} />
-            <Text style={styles.headerText}>New Trip Request</Text>
+            <Text style={styles.headerText}>Trip Request</Text>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
               <Icon name="close" color="#64748b" size={22} />
             </TouchableOpacity>
@@ -196,9 +196,10 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
                     <Icon name="person" type="material" size={16} color="#64748b" />
                     <Text style={styles.customerDetailText}>{customerDetails.gender || "Not specified"}</Text>
                   </View>
+
                   <View style={styles.ratingContainer}>
                     <Icon name="star" type="material" size={16} color="#FFD700" />
-                    <Text style={styles.ratingText}>4.8</Text>
+                    <Text style={styles.ratingText}>{customerDetails?.customer_rating}</Text>
                     <Text style={styles.tripCountText}>(124 trips)</Text>
                   </View>
                 </View>
@@ -208,6 +209,7 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
                 <Text style={styles.sectionTitle}>Trip Details</Text>
 
                 <View style={styles.tripDetail}>
+
                   <View style={styles.iconContainer}>
                     <Icon name="location-pin" type="material" size={20} color="#0DCAF0" />
                   </View>
@@ -226,25 +228,59 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
                     <Text style={styles.detailValue}>{dropoffLocation}</Text>
                   </View>
                 </View>
-
-                {/* <View style={styles.tripMetrics}>
-                  <View style={styles.metricItem}>
-                    <Icon name="map" type="material" size={18} color="#0DCAF0" />
-                    <Text style={styles.metricValue}>{estimatedDistance}</Text>
-                    <Text style={styles.metricLabel}>Distance</Text>
-                  </View>
-                  
-                  <View style={styles.metricDivider} />
-                  
-                  <View style={styles.metricItem}>
-                    <Icon name="attach-money" type="material" size={18} color="#0DCAF0" />
-                    <Text style={styles.metricValue}>{estimatedFare}</Text>
-                    <Text style={styles.metricLabel}>Fare</Text>
-                  </View>
-                </View> */}
+                <View style={styles.tripStatsContainer}>
+                  <Text style={styles.tripStatLine}>
+                    <Text style={styles.tripStatLabel}>Fare: </Text>
+                    <Text style={styles.tripStatValue}>R{selectedRequest?.payment.amount || "Not specified"}</Text>
+                  </Text>
+                  <Text style={styles.tripStatLine}>
+                    <Text style={styles.tripStatLabel}>Payment Method: </Text>
+                    <Text style={styles.tripStatValue}>{selectedRequest?.payment.paymentType || "Not specified"}</Text>
+                  </Text>
+                  <Text style={styles.tripStatLine}>
+                    <Text style={styles.tripStatLabel}>Distance: </Text>
+                    <Text style={styles.tripStatValue}>{selectedRequest?.distance_traveled || "Not specified"} Km</Text>
+                  </Text>
+                </View>
               </View>
 
-              <View style={styles.inputContainer}>
+              {!hideActions && (
+                <>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Reason for declining (required)</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Enter reason if declining the trip"
+                      value={cancellationReason}
+                      onChangeText={setCancellationReason}
+                      placeholderTextColor="#94a3b8"
+                      multiline={true}
+                      numberOfLines={2}
+                    />
+                  </View>
+
+                  <View style={styles.buttonsContainer}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.declineButton]}
+                      onPress={handleDecline}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="close" type="material" size={20} color="#fff" style={styles.buttonIcon} />
+                      <Text style={styles.buttonText}>Decline</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.button, styles.acceptButton]}
+                      onPress={handleAccept}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="check" type="material" size={20} color="#fff" style={styles.buttonIcon} />
+                      <Text style={styles.buttonText}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+              {/* <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Reason for declining (required)</Text>
                 <TextInput
                   style={styles.textInput}
@@ -268,14 +304,14 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate }) => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.button, styles.acceptButton]} 
+                  style={[styles.button, styles.acceptButton]}
                   onPress={handleAccept}
                   activeOpacity={0.8}
                 >
                   <Icon name="check" type="material" size={20} color="#fff" style={styles.buttonIcon} />
                   <Text style={styles.buttonText}>Accept</Text>
                 </TouchableOpacity>
-              </View>
+              </View> */}
             </ScrollView>
           ) : (
             <View style={styles.errorContainer}>
@@ -507,6 +543,28 @@ const styles = StyleSheet.create({
   },
   declineButton: {
     backgroundColor: "#f43f5e",
+  },
+  tripStatsContainer: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  tripStatLine: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+  },
+  tripStatLabel: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  tripStatValue: {
+    fontSize: 16,
+    color: "#1e293b",
+    fontWeight: "500",
   },
 })
 
