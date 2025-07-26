@@ -32,26 +32,27 @@ const SignUpScreen = ({ navigation }) => {
   const [name, setName] = useState('');
   const [gender, setGender] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isChecked, setIsChecked] = useState(false);
 
   const signUp = async () => {
     if (!gender) {
       alert('Please select your gender.');
       return;
     }
-  
+
     if (!email || !password || !name) {
       alert('Please fill in all fields');
       return;
     }
-  
+
     setLoading(true);
     try {
       // Create user with email and password
       const response = await createUserWithEmailAndPassword(auth, email, password);
-  
+
       // Update profile with the name
       await updateProfile(response.user, { displayName: name });
-  
+
       // Store user data in Firestore
       const userRef = doc(db, 'users', response.user.uid);
       await setDoc(userRef, {
@@ -61,9 +62,9 @@ const SignUpScreen = ({ navigation }) => {
         role: 'driver',
         createdAt: new Date().toISOString(),
       });
-  
+
       // Send user data to your backend
-      await axios.post(api+'register', {
+      await axios.post(api + 'register', {
         name,
         email,
         password,
@@ -71,15 +72,15 @@ const SignUpScreen = ({ navigation }) => {
         gender,
         user_uid: response.user.uid,
       });
-      
+
       // Send email verification
       await sendEmailVerification(response.user);
-  
+
       alert('Account created successfully! Please check your email for verification before logging in.');
-  
+
       // Force logout to prevent auto-login after signup
       await signOut(auth);
-  
+
       // Redirect to LoginScreen
       navigation.replace('ProtectedScreen');
     } catch (error) {
@@ -93,12 +94,12 @@ const SignUpScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
-      
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
       >
-        <ScrollView 
+        <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollViewContent}
         >
@@ -114,7 +115,7 @@ const SignUpScreen = ({ navigation }) => {
                 resizeMode="cover"
               />
             </LinearGradient>
-            
+
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerTitle}>Create Account</Text>
               <Text style={styles.headerSubtitle}>Join our driver community today</Text>
@@ -192,7 +193,7 @@ const SignUpScreen = ({ navigation }) => {
                     Male
                   </Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={[
                     styles.genderOption,
@@ -215,9 +216,12 @@ const SignUpScreen = ({ navigation }) => {
 
             {/* Sign Up Button */}
             <TouchableOpacity
-              style={styles.signUpButton}
+              style={[
+                styles.signUpButton,
+                !isChecked && styles.signUpButtonDisabled
+              ]}
               onPress={signUp}
-              disabled={loading}
+              disabled={!isChecked || loading}
               activeOpacity={0.8}
             >
               {loading ? (
@@ -228,11 +232,27 @@ const SignUpScreen = ({ navigation }) => {
             </TouchableOpacity>
 
             {/* Terms and Conditions */}
-            <Text style={styles.termsText}>
-              By signing up, you agree to our{' '}
-              <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-              <Text style={styles.termsLink}>Privacy Policy</Text>
-            </Text>
+            <View style={styles.checkboxContainer}>
+              <TouchableOpacity
+                style={styles.checkbox}
+                onPress={() => setIsChecked(!isChecked)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkboxBox, isChecked && styles.checkboxChecked]}>
+                  {isChecked && <Text style={styles.checkboxTick}>✓</Text>}
+                </View>
+                <Text style={styles.checkboxLabel}>
+                  I agree to the{' '}
+                  <TouchableOpacity onPress={() => navigation.navigate('TermsScreen')}>
+                    <Text style={styles.termsLink}>Terms of Service</Text>
+                  </TouchableOpacity>
+                  {' '}and{' '}
+                  <TouchableOpacity onPress={() => navigation.navigate('TermsScreen')}>
+                    <Text style={styles.termsLink}>Privacy Policy</Text>
+                  </TouchableOpacity>
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Already Have an Account */}
             <View style={styles.loginContainer}>
@@ -360,6 +380,45 @@ const styles = StyleSheet.create({
   selectedGenderText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  // ...existing code...
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  checkbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkboxBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#0DCAF0',
+    backgroundColor: '#fff',
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#0DCAF0',
+    borderColor: '#0DCAF0',
+  },
+  checkboxTick: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  checkboxLabel: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  signUpButtonDisabled: {
+    backgroundColor: '#cbd5e1',
+    shadowColor: 'transparent',
   },
   signUpButton: {
     backgroundColor: '#0DCAF0',

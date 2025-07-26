@@ -60,6 +60,7 @@ import BookingList from "../NthomeAir/BookingList";
 import BookingEdit from "../NthomeAir/BookingEdit";
 import BookingDetails from "../NthomeAir/BookingDetails";
 import FlightWelcomeScreen from "../NthomeAir/FlightWelcomeScreen";
+import TermsScreen from "../DriverScreens/TermsScreen";
 
 
 const Stack = createNativeStackNavigator(); // Renaming to `Stack` for better clarity
@@ -419,7 +420,7 @@ export default function RootNavigator() {
 
           options={{ headerShown: false }}
         />
-           <Stack.Screen
+        <Stack.Screen
           name="FlightWelcomeScreen"
           component={FlightWelcomeScreen}
 
@@ -462,12 +463,13 @@ export default function RootNavigator() {
           component={ViewDocuments}
           options={{ headerShown: false }}
         />
-                <Stack.Screen
+        
+        <Stack.Screen
           name="ViewCarDetails"
           component={ViewCarDetails}
           options={{ headerShown: false }}
         />
-        
+
         <Stack.Screen
           name="CustomerCommunicationBottomSheet"
           component={CustomerCommunicationBottomSheet}
@@ -506,6 +508,7 @@ export default function RootNavigator() {
         <Stack.Screen name="BookingList" component={BookingList} options={{ headerShown: false }} />
         <Stack.Screen name="BookingDetails" component={BookingDetails} options={{ headerShown: false }} />
         <Stack.Screen name="BookingEdit" component={BookingEdit} options={{ headerShown: false }} />
+        <Stack.Screen name="TermsScreen" component={TermsScreen} options={{ headerShown: false }} />
 
         <Stack.Screen
           name="About"

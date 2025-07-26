@@ -24,7 +24,7 @@ import axios from "axios"
 import { api } from "../../api"
 import TripCancellationModal from "../components/TripCancelationModal"
 import { setTripData } from "../redux/actions/tripActions"
-import { setMessageData } from "../redux/actions/messageAction"
+import { addMessage } from "../redux/actions/messageAction"
 import { formatTime } from "../utils/timeTracker"
 import CancelAlertModal from "../components/CancelAlertModal"
 import RideRatingModal from "./RideRatingScreen"
@@ -53,7 +53,7 @@ export default function PendingRequests({ navigation, route }) {
   const session_id = selectedRequest?.session_id;
   const [modalVisible, setModalVisible] = useState(false);
 
-  // console.log("Selected Request from Redux in driverStates session_id:", selectedRequest)
+  // console.log("Selected Request from Redux in ---------------------------------:", selectedRequest)
   // const openDrawer = route.params?.openDrawer
   // const state = route.params?.newState
   // console.log(state, "state from pending requests")
@@ -265,7 +265,7 @@ export default function PendingRequests({ navigation, route }) {
 
       // Show an alert
       alert(`New Trip Request Received!`)
-      console.log("Trip request received:", tripData)
+      // console.log("Trip request received::::::::::::::---------:", tripData)
 
       // Increment notification count - ensure this runs
       setNotificationCount((prevCount) => {
@@ -284,6 +284,7 @@ export default function PendingRequests({ navigation, route }) {
         }),
       )
     })
+    console.log("Trip Request Socket Data::::::::::::::::::::", tripRequestSocket);
 
     listenCancelTrip((tripData) => {
       setUserOrigin({ latitude: null, longitude: null });
@@ -296,10 +297,13 @@ export default function PendingRequests({ navigation, route }) {
       // Increment notification count
       setNotificationCountChat((prevCount) => prevCount + 1)
       dispatch(
-        setMessageData({
+        addMessage({
+          from: messageData.senderId,
+          to: messageData.receiverId,
           message: messageData.message,
-        }),
-      )
+          timestamp: messageData.timestamp,
+        })
+      );
     })
   }, [user_id])
 
@@ -864,39 +868,38 @@ export default function PendingRequests({ navigation, route }) {
 
       {/* Start Trip Button */}
       {showStartButton && tripStatusAccepted !== "on-going" && tripStatusAccepted !== "canceled" && (
-        <>
-          <TouchableOpacity style={styles.startButton} onPress={handleStartTrip}>
-            <Text style={styles.buttonText}>Start Trip</Text>
+
+        <TouchableOpacity style={styles.startButton} onPress={handleStartTrip}>
+          <Text style={styles.buttonText}>Start Trip</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Navigation Buttons - Only show when trip is accepted but not completed */}
+      {(tripStatusAccepted === "accepted" || tripStarted) && (
+        <View style={styles.navButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.navButton, styles.googleButton]}
+            onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
+          >
+            <Ionicons name="logo-google" size={20} color="white" />
+            <Text style={styles.navButtonText}>Maps</Text>
           </TouchableOpacity>
 
-          {/* Navigation Buttons - Only show when trip is accepted but not completed */}
-          {(tripStatusAccepted === "accepted" || tripStatusAccepted === "on-going") && (
-            <View style={styles.navButtonsContainer}>
-              <TouchableOpacity
-                style={[styles.navButton, styles.googleButton]}
-                onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
-              >
-                <Ionicons name="logo-google" size={20} color="white" />
-                <Text style={styles.navButtonText}>Maps</Text>
-              </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.customerNav, styles.customerButton]}
+            onPress={() => handleViewCustomer()}
+          >
+            <Ionicons name="person" size={20} color="white" />
+          </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.customerNav, styles.customerButton]}
-                onPress={() => handleViewCustomer()}
-              >
-                <Ionicons name="person" size={20} color="white" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.navButton, styles.wazeButton]}
-                onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
-              >
-                <Ionicons name="car-sport" size={20} color="white" />
-                <Text style={styles.navButtonText}>Waze</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </>
+          <TouchableOpacity
+            style={[styles.navButton, styles.wazeButton]}
+            onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
+          >
+            <Ionicons name="car-sport" size={20} color="white" />
+            <Text style={styles.navButtonText}>Waze</Text>
+          </TouchableOpacity>
+        </View>
       )}
       {showEndButton && (
         <TouchableOpacity style={styles.endRideButton} onPress={handleEndRide}>

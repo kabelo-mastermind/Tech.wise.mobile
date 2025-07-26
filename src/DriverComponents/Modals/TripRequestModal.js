@@ -231,11 +231,11 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate, hideActio
                 <View style={styles.tripStatsContainer}>
                   <Text style={styles.tripStatLine}>
                     <Text style={styles.tripStatLabel}>Fare: </Text>
-                    <Text style={styles.tripStatValue}>R{selectedRequest?.payment.amount || "Not specified"}</Text>
+                    <Text style={styles.tripStatValue}>R{selectedRequest?.payment?.amount || "Card"}</Text>
                   </Text>
                   <Text style={styles.tripStatLine}>
                     <Text style={styles.tripStatLabel}>Payment Method: </Text>
-                    <Text style={styles.tripStatValue}>{selectedRequest?.payment.paymentType || "Not specified"}</Text>
+                    <Text style={styles.tripStatValue}>{selectedRequest?.payment?.paymentType || "Not specified"}</Text>
                   </Text>
                   <Text style={styles.tripStatLine}>
                     <Text style={styles.tripStatLabel}>Distance: </Text>
