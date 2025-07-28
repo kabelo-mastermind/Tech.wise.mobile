@@ -4,6 +4,8 @@ const initialState = {
 };
 
 const messageReducer = (state = initialState, action) => {
+  console.log("Message Reducer Action:", action);
+  
   switch (action.type) {
     case 'ADD_MESSAGE':
       return {

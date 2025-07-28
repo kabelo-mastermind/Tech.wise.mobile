@@ -23,6 +23,7 @@ import {
   connectSocket,
 } from "../configSocket/socketConfig";
 import { useSelector } from "react-redux";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DriverChat = () => {
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -31,26 +32,41 @@ const DriverChat = () => {
   const [optionsVisible, setOptionsVisible] = useState(null);
   const flatListRef = useRef(null);
 
+  useEffect(() => {
+    AsyncStorage.clear(); // clear all persisted data
+  }, []);
   // Redux selectors
   const user_id = useSelector((state) => state.auth.user?.user_id || "");
   const customerId = useSelector(
     (state) => state.trip.tripData?.customer_id || ""
   );
-  const trip_id = useSelector((state) => state.trip.tripData?.id || "");
-  console.log(
-    "user_id",
-    user_id,
-    "customerId",
-    customerId,
-    "trip_id",
-    trip_id,
-    "tripData",
-    useSelector((state) => state.trip.tripData)
+  const messagesFromRedux = useSelector(
+    (state) => state.message?.messages || []
   );
+
+  // console.log(
+  //   "messagesFromReduxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:",
+  //   messagesFromRedux
+  // );
+  const trip_id = useSelector((state) => state.trip.tripData?.id || "");
+  // console.log(
+  //   "user_id",
+  //   user_id,
+  //   "customerId",
+  //   customerId,
+  //   "trip_id",
+  //   trip_id,
+  //   "tripData",
+  //   useSelector((state) => state.trip.tripData)
+  // );
 
   // State for messages and input text
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
+
+  useEffect(() => {
+    setMessages(messagesFromRedux);
+  }, [messagesFromRedux]);
 
   useEffect(() => {
     if (user_id) {

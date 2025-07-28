@@ -63,6 +63,8 @@ export default function PendingRequests({ navigation, route }) {
   // const tripAccepted = route.params?.tripAccepted
   //from TrpRequestModal
   const tripData = selectedRequest
+  // console.log("Trip Data from Redux in PendingRequests:", tripData?.customerId);
+  
   useEffect(() => {
     if (tripData) {
       console.log("✅ tripId:", tripData.id) // 'id' is tripId
@@ -298,10 +300,12 @@ export default function PendingRequests({ navigation, route }) {
       setNotificationCountChat((prevCount) => prevCount + 1)
       dispatch(
         addMessage({
-          from: messageData.senderId,
-          to: messageData.receiverId,
-          message: messageData.message,
-          timestamp: messageData.timestamp,
+          id: Date.now().toString(),
+          senderId: tripData?.customerId,
+          receiverId: user_id,
+          tripId: tripData?.tripId,
+          message: messageData?.message,
+          timestamp: new Date().toISOString(),
         })
       );
     })

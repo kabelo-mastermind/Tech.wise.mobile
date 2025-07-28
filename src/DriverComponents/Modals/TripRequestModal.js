@@ -35,7 +35,7 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate, hideActio
   const [fadeAnim] = useState(new Animated.Value(0))
   const [slideAnim] = useState(new Animated.Value(height))
   const selectedRequest = useSelector((state) => state.trip.selectedRequest)
-  console.log("Selected Request from redux:", selectedRequest)
+  // console.log("Selected Request from redux:", selectedRequest)
   const dispatch = useDispatch();
 
   const customerId = useSelector((state) => state.trip.selectedRequest?.customerId)
