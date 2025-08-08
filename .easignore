@@ -22,3 +22,5 @@ yarn.lock
 # Unrelated local folders
 Music/
 My Music/
+/android
+/ios
