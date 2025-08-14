@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { StyleSheet, View, Dimensions, TouchableOpacity, Text, Animated, Linking, Alert } from "react-native"
+import { StyleSheet, View, Dimensions, TouchableOpacity,BackHandler, Text, Animated, Linking, Alert } from "react-native"
 import { Icon } from "react-native-elements"
 import { colors } from "../global/styles"
 import MapComponent from "../components/MapComponent"
@@ -24,7 +24,7 @@ import axios from "axios"
 import { api } from "../../api"
 import TripCancellationModal from "../components/TripCancelationModal"
 import { setTripData } from "../redux/actions/tripActions"
-import { addMessage } from "../redux/actions/messageAction"
+import { addMessage, clearMessages } from "../redux/actions/messageAction"
 import { formatTime } from "../utils/timeTracker"
 import CancelAlertModal from "../components/CancelAlertModal"
 import RideRatingModal from "./RideRatingScreen"
@@ -237,7 +237,18 @@ export default function PendingRequests({ navigation, route }) {
       console.error("Failed to update driver status:", error.response?.data || error.message);
     }
   };
+ useEffect(() => {
+   const onBackPress = () => {
+     handleGoOffline();
+     return true; // Prevent default back navigation
+   };
 
+   const backHandler = BackHandler.addEventListener(
+     "hardwareBackPress",
+     onBackPress
+   );
+   return () => backHandler.remove();
+ }, [handleGoOffline]);
   // Extracting user origin and destination from tripData
   useEffect(() => {
     if (selectedRequest) {
@@ -502,6 +513,7 @@ export default function PendingRequests({ navigation, route }) {
         setUserDestination({ latitude: null, longitude: null })
         emitCancelTrip(tripId, selectedRequest.customerId)
         setShowStartButton(false);
+        dispatch(clearMessages());
         handleUpdateDriverState()
 
         //  navigation.navigate("PendingRequests")// it causes re rendering
@@ -753,6 +765,7 @@ export default function PendingRequests({ navigation, route }) {
       setUserDestination({ latitude: null, longitude: null });
       setShowStartButton(false);
       setShowEndButton(false);
+       dispatch(clearMessages());
       setEta("N/A");
       setDistance("N/A");
       setDistanceTraveld("N/A");
