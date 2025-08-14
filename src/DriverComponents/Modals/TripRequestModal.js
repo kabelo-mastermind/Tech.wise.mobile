@@ -40,7 +40,7 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate, hideActio
 
   const customerId = useSelector((state) => state.trip.selectedRequest?.customerId)
   const tripId = useSelector((state) => state.trip.selectedRequest?.id)
-
+ 
   useEffect(() => {
     if (isVisible) {
       Animated.parallel([

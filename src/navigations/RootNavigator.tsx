@@ -44,7 +44,7 @@ import PaymentScreen from "../DriverScreens/PaymentScreen";
 import PrivacySettings from "../DriverScreens/PrivacySettings";
 import ForgotPasswordScreen from "../WelcomeScreens/ForgotPasswordScreen";
 import CustomerCommunicationBottomSheet from "../DriverComponents/CustomerCommunicationBottomSheet";
-import Wallet from "../DriverScreens/WalletDriver";
+// import Wallet from "../DriverScreens/WalletDriver";
 import CarListing from "../DriverScreens/CarListing";
 import DriverRewards from "../DriverScreens/DriverRewards";
 import DriverChat from "../DriverScreens/DriverChat";
@@ -68,9 +68,7 @@ const Drawer = createDrawerNavigator(); // Create DrawerNavigator
 const Tab = createBottomTabNavigator(); // Create BottomTabNavigator
 
 // Bottom Tab Navigator for navigating between screens
-function BottomTabNavigator({ route }) {
-  const initialScreen = route.params?.screen || 'Loginscreen'; // Get the initial screen from the route params
-
+function BottomTabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Drive" // Set the initial route to Home instead of LoginScreen
@@ -140,7 +138,7 @@ function DrawerNavigator() {
           ),
         }}
       />
-      <Drawer.Screen
+      {/* <Drawer.Screen
         name="My Profile"
         component={DriverProfile}
         options={{
@@ -229,7 +227,7 @@ function DrawerNavigator() {
       />
 
       <Drawer.Screen
-        name="Driver Stats"
+        name="DriverStats"
         component={DriverStats} // Add the Upload Documents screen
         options={{
           drawerIcon: ({ focused, size }) => (
@@ -310,50 +308,67 @@ function DrawerNavigator() {
             <Icon name="logout" type="material-community" size={size} color={focused ? "#7cc" : "gray"} />
           ),
         }}
-      />
+      /> */}
     </Drawer.Navigator>
   );
 }
+
+// Helper to get active route name (even in nested navigators)
+const getActiveRouteName = (state) => {
+  const route = state.routes[state.index];
+  if (route.state) {
+    return getActiveRouteName(route.state);
+  }
+  return route.name;
+};
 
 export default function RootNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState(null); // Initially null to avoid flickering
 
   useEffect(() => {
-    const checkAuthStatus = async () => {
+    const loadInitialRoute = async () => {
       try {
+        // Check if a last screen is saved
+        const savedScreen = await AsyncStorage.getItem('lastScreen');
+        console.log('Initial route:', initialRoute)
+        if (savedScreen) {
+          setInitialRoute(savedScreen);
+          setIsLoading(false);
+          return;
+        }
+
+        // Your existing auth/onboarding checks
         const hasOnboarded = await AsyncStorage.getItem('hasOnboarded');
         const storedUserId = await AsyncStorage.getItem('userId');
         const emailVerified = await AsyncStorage.getItem('emailVerified');
 
         if (storedUserId && emailVerified === 'true') {
           setInitialRoute('DrawerNavigator');
-          return;
-        }
-
-        const user = auth.currentUser;
-
-        if (user) {
-          await user.reload();
-          if (user.emailVerified) {
-            await AsyncStorage.setItem('userId', user.uid);
-            await AsyncStorage.setItem('emailVerified', 'true');
-            setInitialRoute('DrawerNavigator');
-          } else {
-            setInitialRoute('ProtectedScreen');
-          }
         } else {
-          setInitialRoute(hasOnboarded === 'true' ? 'LoginScreen' : 'Onboarding');
+          const user = auth.currentUser;
+          if (user) {
+            await user.reload();
+            if (user.emailVerified) {
+              await AsyncStorage.setItem('userId', user.uid);
+              await AsyncStorage.setItem('emailVerified', 'true');
+              setInitialRoute('DrawerNavigator');
+            } else {
+              setInitialRoute('ProtectedScreen');
+            }
+          } else {
+            setInitialRoute(hasOnboarded === 'true' ? 'LoginScreen' : 'Onboarding');
+          }
         }
       } catch (error) {
         console.error('Error checking authentication status:', error);
+        setInitialRoute('LoginScreen');
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkAuthStatus();
-
+    loadInitialRoute();
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -374,12 +389,20 @@ export default function RootNavigator() {
     return () => unsubscribe();
   }, []);
 
+
   if (isLoading || !initialRoute) {
     return null; // Avoid rendering the navigator until the initial route is set
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      onStateChange={(state) => {
+        const currentRouteName = getActiveRouteName(state);
+        if (currentRouteName) {
+          AsyncStorage.setItem('lastScreen', currentRouteName);
+        }
+      }}
+    >
       <Stack.Navigator initialRouteName={initialRoute}>
         {/* Onboarding Screen */}
         <Stack.Screen
@@ -463,7 +486,7 @@ export default function RootNavigator() {
           component={ViewDocuments}
           options={{ headerShown: false }}
         />
-        
+
         <Stack.Screen
           name="ViewCarDetails"
           component={ViewCarDetails}
