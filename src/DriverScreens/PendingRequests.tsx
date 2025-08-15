@@ -49,7 +49,7 @@ export default function PendingRequests({ navigation, route }) {
   const user = useSelector((state) => state.auth.user)
   const user_id = user?.user_id || null
   const [tripStarted, setTripStarted] = useState(false)
-  const selectedRequest = useSelector((state) => state.trip.selectedRequest)
+  const selectedRequest = useSelector((state) => state.trip.selectedRequest) 
   const session_id = selectedRequest?.session_id;
   const [modalVisible, setModalVisible] = useState(false);
 

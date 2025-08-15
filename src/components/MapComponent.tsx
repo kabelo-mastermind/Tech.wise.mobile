@@ -83,7 +83,7 @@ function getCoordinateAtDistanceAndBearing(startCoord, distanceMeters, bearingDe
   const bearingRad = (bearingDegrees * Math.PI) / 180
   const latDestRad = Math.asin(
     Math.sin(latRad) * Math.cos(distanceMeters / R) +
-      Math.cos(latRad) * Math.sin(distanceMeters / R) * Math.cos(bearingRad),
+    Math.cos(latRad) * Math.sin(distanceMeters / R) * Math.cos(bearingRad),
   )
   const lonDestRad =
     lonRad +
@@ -108,6 +108,7 @@ const THEME = {
   },
 }
 
+
 const MapComponent = ({
   userOrigin,
   userDestination,
@@ -116,7 +117,6 @@ const MapComponent = ({
   mapRef: externalMapRef,
   hideNavigation = false,
 }) => {
-  // Create internal mapRef if external one is not provided
   const internalMapRef = useRef(null)
   const mapRef = externalMapRef || internalMapRef
 
@@ -125,78 +125,56 @@ const MapComponent = ({
   const [currentStep, setCurrentStep] = useState(0)
   const [distance, setDistance] = useState(null)
   const [duration, setDuration] = useState(null)
-  const [tripStarted, setTripStarted] = useState(tripStart)
-  const [showDestination, setShowDestination] = useState(false)
   const [prevDriverLocation, setPrevDriverLocation] = useState(null)
   const [driverHeading, setDriverHeading] = useState(0)
   const [mapCameraHeading, setMapCameraHeading] = useState(0)
-
-  // State for collapsible trip details
   const [isTripDetailsExpanded, setIsTripDetailsExpanded] = useState(false)
   const tripDetailsHeight = useRef(new Animated.Value(70)).current
-
-  // Enhanced animation states
   const [polylineCoords, setPolylineCoords] = useState([])
   const [isAnimating, setIsAnimating] = useState(false)
   const [mapReady, setMapReady] = useState(false)
-
-  // Animated values for smooth marker movement
   const markerPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current
   const [currentMarkerCoordinate, setCurrentMarkerCoordinate] = useState(null)
 
-  // Optimize map centering with useCallback
-  const centerMap = useCallback(() => {
-    if (!mapRef?.current) return
-    if (driverLocation?.latitude && driverLocation?.longitude) {
-      mapRef.current.animateToRegion({
-        latitude: driverLocation.latitude,
-        longitude: driverLocation.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-      })
-    }
-  }, [driverLocation, mapRef])
+  // Use tripStart directly instead of local state
+  const tripStarted = tripStart;
 
-  // Initialize marker position when driver location is first available
+  const centerMap = useCallback(() => {
+    if (!mapRef?.current || !driverLocation) return;
+
+    mapRef.current.animateToRegion({
+      latitude: driverLocation.latitude,
+      longitude: driverLocation.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    }, 1000);
+  }, [driverLocation, mapRef]);
+
   useEffect(() => {
     if (driverLocation?.latitude && driverLocation?.longitude && !currentMarkerCoordinate) {
-      setCurrentMarkerCoordinate(driverLocation)
+      setCurrentMarkerCoordinate(driverLocation);
       markerPosition.setValue({
         x: driverLocation.longitude,
         y: driverLocation.latitude,
-      })
-      centerMap()
+      });
+      centerMap();
     }
-  }, [driverLocation, currentMarkerCoordinate, centerMap])
+  }, [driverLocation, currentMarkerCoordinate, centerMap]);
 
-  // Map Rotation and Navigation Zoom Control
   useEffect(() => {
-    if (!mapRef?.current || !driverLocation || !mapReady) {
-      console.log(
-        "DEBUG: Map camera update skipped. mapRef.current:",
-        !!mapRef?.current,
-        "driverLocation:",
-        !!driverLocation,
-        "mapReady:",
-        mapReady,
-      )
-      return
-    }
+    if (!mapRef?.current || !driverLocation || !mapReady) return;
 
-    const directionToPointUp =
-      polylineCoords.length > 0 ? getRouteDirection(driverLocation, polylineCoords) : driverHeading
-    const targetMapHeading = normalizeAngle(360 - directionToPointUp)
-    const offsetDistanceMeters = 0
-    const targetCenter = getCoordinateAtDistanceAndBearing(driverLocation, offsetDistanceMeters, directionToPointUp)
+    const directionToPointUp = polylineCoords.length > 0
+      ? getRouteDirection(driverLocation, polylineCoords)
+      : driverHeading;
 
-    // console.log(
-    //   "DEBUG: Animating camera. Driver:",
-    //   driverLocation,
-    //   "Target Center:",
-    //   targetCenter,
-    //   "Target Heading:",
-    //   targetMapHeading.toFixed(2),
-    // )
+    const targetMapHeading = normalizeAngle(360 - directionToPointUp);
+    const offsetDistanceMeters = 0;
+    const targetCenter = getCoordinateAtDistanceAndBearing(
+      driverLocation,
+      offsetDistanceMeters,
+      directionToPointUp
+    );
 
     mapRef.current.animateCamera(
       {
@@ -206,94 +184,64 @@ const MapComponent = ({
         longitudeDelta: 0.005,
         pitch: 0,
       },
-      { duration: 500 },
-    )
-    setMapCameraHeading(targetMapHeading)
-  }, [driverLocation, polylineCoords, mapReady, driverHeading, mapRef])
+      { duration: 500 }
+    );
+    setMapCameraHeading(targetMapHeading);
+  }, [driverLocation, polylineCoords, mapReady, driverHeading, mapRef]);
 
-  // Set showDestination to true when tripStarted changes to true
+  // Reset trip data when trip ends
   useEffect(() => {
-    setTripStarted(tripStart)
-    if (tripStart) {
-      setShowDestination(true)
-    } else {
-      setShowDestination(false)
-      setDistance(null)
-      setDuration(null)
-      setInstructions([])
-      setCurrentStep(0)
-      setPolylineCoords([])
+    if (!tripStart) {
+      setDistance(null);
+      setDuration(null);
+      setInstructions([]);
+      setCurrentStep(0);
+      setPolylineCoords([]);
     }
-  }, [tripStart])
+  }, [tripStart]);
 
-  // Also set showDestination to true when userDestination changes
-  useEffect(() => {
-    if (userDestination?.latitude && userDestination?.longitude) {
-      setShowDestination(true)
-    }
-  }, [userDestination])
-
-  // If userOrigin or userDestination are cleared (latitude is null), reset distance and duration
-  useEffect(() => {
-    if (!userOrigin?.latitude || !userDestination?.latitude) {
-      setDistance(null)
-      setDuration(null)
-    }
-  }, [userOrigin, userDestination])
-
-  // Handle map ready state
   const handleMapReady = () => {
-    // console.log("🗺️ Map is ready!")
-    setMapReady(true)
-  }
+    setMapReady(true);
+  };
 
-  // Handle region change to get camera heading
   const handleRegionChangeComplete = async (region) => {
     try {
       if (mapRef?.current && mapRef.current.getCamera) {
-        const camera = await mapRef.current.getCamera()
-        setMapCameraHeading(camera.heading || 0)
+        const camera = await mapRef.current.getCamera();
+        setMapCameraHeading(camera.heading || 0);
       }
     } catch (error) {
-      console.log("Camera heading not available")
+      console.log("Camera heading not available");
     }
-  }
+  };
 
-  // Enhanced directions handler to capture polyline coordinates and auto-fit
   const handleDirectionsReady = (result) => {
-    console.log("🛣️ Directions ready with", result.coordinates?.length || 0, "coordinates")
     if (result.distance > 0 && result.duration > 0) {
-      setDistance(result.distance.toFixed(2))
-      setDuration(result.duration.toFixed(2))
+      setDistance(result.distance.toFixed(2));
+      setDuration(result.duration.toFixed(2));
     }
-    if (result.legs && result.legs[0] && result.legs[0].steps) {
-      setInstructions(result.legs[0].steps)
+    if (result.legs?.[0]?.steps) {
+      setInstructions(result.legs[0].steps);
     }
-    if (result.coordinates && result.coordinates.length > 0) {
-      console.log("📍 Setting polyline coordinates:", result.coordinates.length)
-      setPolylineCoords(result.coordinates)
-    } else {
-      console.warn("⚠️ No coordinates found in directions result")
+    if (result.coordinates?.length > 0) {
+      setPolylineCoords(result.coordinates);
     }
-    centerMap()
-  }
+    centerMap();
+  };
 
   const centerOnCurrentLocation = () => {
-    console.log("📍 Manual center on driver using centerMap")
-    centerMap()
-  }
+    centerMap();
+  };
 
-  // Function to toggle trip details card expansion
   const toggleTripDetails = () => {
-    setIsTripDetailsExpanded(!isTripDetailsExpanded)
+    setIsTripDetailsExpanded(!isTripDetailsExpanded);
     Animated.timing(tripDetailsHeight, {
       toValue: isTripDetailsExpanded ? 70 : 150,
       duration: 300,
       useNativeDriver: false,
-    }).start()
-  }
+    }).start();
+  };
 
-  // Determine initial region based on available coordinates
   const getInitialRegion = () => {
     if (driverLocation?.latitude && driverLocation?.longitude) {
       return {
@@ -301,7 +249,7 @@ const MapComponent = ({
         longitude: driverLocation.longitude,
         latitudeDelta: 0.005,
         longitudeDelta: 0.005,
-      }
+      };
     }
     if (userOrigin?.latitude && userOrigin?.longitude) {
       return {
@@ -309,18 +257,17 @@ const MapComponent = ({
         longitude: userOrigin.longitude,
         latitudeDelta: 0.005,
         longitudeDelta: 0.005,
-      }
+      };
     }
-    // Default to Johannesburg if no coordinates available
     return {
       latitude: -26.2041,
       longitude: 28.0473,
       latitudeDelta: 0.05,
       longitudeDelta: 0.05,
-    }
-  }
+    };
+  };
 
-  const initialRegion = getInitialRegion()
+  const initialRegion = getInitialRegion();
 
   return (
     <View style={styles.container}>
@@ -342,6 +289,7 @@ const MapComponent = ({
         minZoomLevel={10}
         maxZoomLevel={23}
       >
+        {/* Driver Marker */}
         {currentMarkerCoordinate && (
           <Marker coordinate={currentMarkerCoordinate} anchor={{ x: 0.5, y: 0.5 }} flat={false} rotation={0}>
             <View style={styles.driverMarkerContainer}>
@@ -350,6 +298,7 @@ const MapComponent = ({
           </Marker>
         )}
 
+        {/* Origin Marker */}
         {userOrigin?.latitude && userOrigin?.longitude && (
           <Marker coordinate={userOrigin}>
             <View style={styles.originMarker}>
@@ -361,7 +310,8 @@ const MapComponent = ({
           </Marker>
         )}
 
-        {userDestination?.latitude && userDestination?.longitude && showDestination && (
+        {/* Destination Marker - Only shown during trip */}
+        {tripStarted && userDestination?.latitude && userDestination?.longitude && (
           <Marker coordinate={userDestination}>
             <View style={styles.destinationMarker}>
               <Icon type="material-community" name="map-marker" color={THEME.secondary} size={30} />
@@ -372,6 +322,7 @@ const MapComponent = ({
           </Marker>
         )}
 
+        {/* Pre-trip: Driver to Origin */}
         {!tripStarted && driverLocation?.latitude && userOrigin?.latitude && GOOGLE_MAPS_APIKEY && (
           <MapViewDirections
             origin={driverLocation}
@@ -380,10 +331,11 @@ const MapComponent = ({
             strokeWidth={4}
             strokeColor={THEME.primary}
             onReady={handleDirectionsReady}
-            onError={(error) => console.error("Directions Error:", error)}
+            onError={(error) => console.error("Pre-trip Directions Error:", error)}
           />
         )}
 
+        {/* During trip: Origin to Destination */}
         {tripStarted && userOrigin?.latitude && userDestination?.latitude && GOOGLE_MAPS_APIKEY && (
           <MapViewDirections
             origin={userOrigin}
@@ -391,15 +343,13 @@ const MapComponent = ({
             apikey={GOOGLE_MAPS_APIKEY}
             strokeWidth={4}
             strokeColor={"#4CAF50"}
-            onReady={(result) => {
-              handleDirectionsReady(result)
-              setShowDestination(true)
-            }}
+            onReady={handleDirectionsReady}
             onError={(error) => console.error("Trip Directions Error:", error)}
           />
         )}
       </MapView>
 
+      {/* Trip Details Card */}
       {distance && duration && (
         <Animated.View style={[styles.tripDetailsCard, { height: tripDetailsHeight }]}>
           <TouchableOpacity onPress={toggleTripDetails} style={styles.tripDetailsTouchable}>
@@ -437,35 +387,32 @@ const MapComponent = ({
         </Animated.View>
       )}
 
-      {!hideNavigation &&
-        userOrigin?.latitude &&
-        userOrigin?.longitude &&
-        userDestination?.latitude &&
-        userDestination?.longitude && (
-          <View style={styles.navigationCard}>
-            <View style={styles.navigationHeader}>
-              <Icon type="material-community" name="navigation" color={THEME.primary} size={20} />
-              <Text style={styles.navigationTitle}>Navigation</Text>
-            </View>
-            <View style={styles.navigationContent}>
-              {instructions.length > 0 && currentStep < instructions.length ? (
-                <Text style={styles.navigationText}>
-                  {instructions[currentStep].html_instructions.replace(/<[^>]+>/g, "")}
-                </Text>
-              ) : (
-                <Text style={styles.navigationText}>Head to destination</Text>
-              )}
-            </View>
-            <TouchableOpacity style={styles.locationButton} onPress={centerOnCurrentLocation}>
-              <Icon type="material-community" name="crosshairs-gps" color="#FFFFFF" size={24} />
-            </TouchableOpacity>
+      {/* Navigation Card */}
+      {!hideNavigation && userOrigin?.latitude && userOrigin?.longitude && userDestination?.latitude && userDestination?.longitude && (
+        <View style={styles.navigationCard}>
+          <View style={styles.navigationHeader}>
+            <Icon type="material-community" name="navigation" color={THEME.primary} size={20} />
+            <Text style={styles.navigationTitle}>Navigation</Text>
           </View>
-        )}
+          <View style={styles.navigationContent}>
+            {instructions.length > 0 && currentStep < instructions.length ? (
+              <Text style={styles.navigationText}>
+                {instructions[currentStep].html_instructions.replace(/<[^>]+>/g, "")}
+              </Text>
+            ) : (
+              <Text style={styles.navigationText}>Head to destination</Text>
+            )}
+          </View>
+          <TouchableOpacity style={styles.locationButton} onPress={centerOnCurrentLocation}>
+            <Icon type="material-community" name="crosshairs-gps" color="#FFFFFF" size={24} />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
-  )
-}
+  );
+};
 
-export default MapComponent
+export default MapComponent;
 
 const styles = StyleSheet.create({
   container: {
