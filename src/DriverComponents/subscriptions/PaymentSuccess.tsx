@@ -166,7 +166,7 @@ const PaymentSuccess = ({ route, navigation }) => {
                   })
                 }
               >
-                <Text style={styles.buttonText}>View Subscription</Text>
+                <Text style={styles.buttonText}>Go to Subscription plans</Text>
               </TouchableOpacity>
             </View>
           ) : (

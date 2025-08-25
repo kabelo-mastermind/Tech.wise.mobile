@@ -310,7 +310,7 @@ const SubscriptionPage = ({ navigation, route }) => {
         {subscription && (
           <TouchableOpacity style={styles.viewSubscriptionButton} onPress={handleViewSubscription}>
             <Icon name="eye" type="feather" color="#FFFFFF" size={20} style={styles.buttonIcon} />
-            <Text style={styles.buttonText}>View Current Subscription</Text>
+            <Text style={styles.buttonText}>Manage Current Subscription</Text>
           </TouchableOpacity>
         )}
 
