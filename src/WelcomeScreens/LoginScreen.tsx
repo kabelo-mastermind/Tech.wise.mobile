@@ -25,6 +25,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import axios from 'axios';
 import { api } from '../../api';
 import { LinearGradient } from 'expo-linear-gradient'; // If available in your project
+import { showToast } from '../constants/showToast';
 
 const { width, height } = Dimensions.get('window');
 
@@ -57,68 +58,91 @@ const LoginScreen = ({ navigation }) => {
     return () => unsubscribe();
   }, [navigation, dispatch]);
 
-  const signIn = async () => {
-    if (!email || !password) {
-      alert('Please enter both email and password');
+const signIn = async () => {
+  if (!email || !password) {
+    showToast("info", "Missing Info", "Please enter both email and password.");
+    return;
+  }
+
+  setAuthenticating(true);
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // Ensure email verification status is up-to-date
+    await user.reload();
+
+    if (!user.emailVerified) {
+      showToast(
+        "info",
+        "Verify your email 📧",
+        "Please check your inbox before logging in."
+      );
+      navigation.navigate("ProtectedScreen");
       return;
     }
-    
-    setAuthenticating(true);
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-  
-      // Ensure email verification status is up-to-date
-      await user.reload();
-  
-      if (!user.emailVerified) {
-        alert('Please verify your email before logging in.');
-        navigation.navigate('ProtectedScreen');
-        return;
-      }
-  
-      // Retrieve user data from Firestore
-      const userRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userRef);
-  
-      if (!userDoc.exists()) {
-        alert('User not found.');
-        return;
-      }
-  
-      const userData = userDoc.data();
-  
-      // Check if the user is a driver
-      if (userData.role !== 'driver') {
-        alert('Only drivers are allowed to log in.');
-        navigation.replace('LogoutPage');
-        return;
-      }
-  
-      // Store user details in AsyncStorage
-      await AsyncStorage.setItem('userId', user.uid);
-      await AsyncStorage.setItem('emailVerified', 'true');
-  
-      setUserId(user.uid);
-      setUserAuth(user);
-      
-      // Dispatch user details to Redux
-      dispatch(setUser({
+
+    // Retrieve user data from Firestore
+    const userRef = doc(db, "users", user.uid);
+    const userDoc = await getDoc(userRef);
+
+    if (!userDoc.exists()) {
+      showToast("error", "Account not found", "No user found with this account.");
+      return;
+    }
+
+    const userData = userDoc.data();
+
+    // Check if the user is a driver
+    if (userData.role !== "driver") {
+      showToast("error", "Access denied 🚫", "Only drivers are allowed to log in.");
+      navigation.replace("LogoutPage");
+      return;
+    }
+
+    // Store user details in AsyncStorage
+    await AsyncStorage.setItem("userId", user.uid);
+    await AsyncStorage.setItem("emailVerified", "true");
+
+    setUserId(user.uid);
+    setUserAuth(user);
+
+    // Dispatch user details to Redux
+    dispatch(
+      setUser({
         name: user.displayName,
         email: user.email,
         id: user.uid,
         role: userData.role,
-      }));
-  
-      // Call fetchDriverUserID and pass user and userData
-      fetchDriverUserID(user, userData);
-    } catch (error) {
-      console.log(error);
-      alert('Sign in failed, please check your email and password');
-    } finally {
-      setAuthenticating(false);
+      })
+    );
+
+    // Call fetchDriverUserID and pass user and userData
+    fetchDriverUserID(user, userData);
+
+    // ✅ Success toast
+    showToast("success", "Welcome back", "You’ve successfully logged in!");
+  } catch (error: any) {
+    console.log(error);
+
+    // Map Firebase auth error codes to friendly messages
+    let friendlyMessage = "Login failed. Please check your email and password.";
+    if (error.code === "auth/user-not-found") {
+      friendlyMessage = "No account found with this email. Please sign up first.";
+    } else if (error.code === "auth/wrong-password") {
+      friendlyMessage = "Incorrect password. Please try again.";
+    } else if (error.code === "auth/invalid-email") {
+      friendlyMessage = "The email address is invalid. Please check and try again.";
+    } else if (error.code === "auth/too-many-requests") {
+      friendlyMessage = "Too many login attempts. Please try again later.";
     }
-  };
+
+    showToast("error", "Login failed", friendlyMessage);
+  } finally {
+    setAuthenticating(false);
+  }
+};
+
   
   const fetchDriverUserID = async (user, userData) => {
     try {

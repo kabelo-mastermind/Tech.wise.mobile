@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { api } from '../../api';
 import { LinearGradient } from 'expo-linear-gradient'; // If available in your project
+import { showToast } from '../constants/showToast';
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,62 +35,78 @@ const SignUpScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
 
-  const signUp = async () => {
-    if (!gender) {
-      alert('Please select your gender.');
-      return;
+const signUp = async () => {
+  if (!gender) {
+    showToast("info", "Missing Info", "Please select your gender.");
+    return;
+  }
+
+  if (!email || !password || !name) {
+    showToast("error", "Incomplete form", "Please fill in all fields.");
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // Create user with email and password
+    const response = await createUserWithEmailAndPassword(auth, email, password);
+
+    // Update profile with the name
+    await updateProfile(response.user, { displayName: name });
+
+    // Store user data in Firestore
+    const userRef = doc(db, "users", response.user.uid);
+    await setDoc(userRef, {
+      name,
+      email,
+      gender,
+      role: "driver",
+      createdAt: new Date().toISOString(),
+    });
+
+    // Send user data to your backend
+    await axios.post(api + "register", {
+      name,
+      email,
+      password,
+      role: "driver",
+      gender,
+      user_uid: response.user.uid,
+    });
+
+    // Send email verification
+    await sendEmailVerification(response.user);
+
+    showToast(
+      "success",
+      "Account created successfully",
+      "Please verify your email before logging in."
+    );
+
+    // Force logout to prevent auto-login after signup
+    await signOut(auth);
+
+    // Redirect to LoginScreen
+    navigation.replace("ProtectedScreen");
+  } catch (error: any) {
+    // Map Firebase error codes to friendly messages
+    let friendlyMessage = "Something went wrong while creating your account. Please try again.";
+
+    if (error.code === "auth/weak-password") {
+      friendlyMessage = "Your password is too weak. Please use at least 6 characters.";
+    } else if (error.code === "auth/invalid-email") {
+      friendlyMessage = "The email you entered is not valid. Please check and try again.";
+    } else if (error.code === "auth/email-already-in-use") {
+      friendlyMessage = "This email is already linked to another account.";
     }
 
-    if (!email || !password || !name) {
-      alert('Please fill in all fields');
-      return;
-    }
+    showToast("error", "Sign up failed", friendlyMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setLoading(true);
-    try {
-      // Create user with email and password
-      const response = await createUserWithEmailAndPassword(auth, email, password);
 
-      // Update profile with the name
-      await updateProfile(response.user, { displayName: name });
-
-      // Store user data in Firestore
-      const userRef = doc(db, 'users', response.user.uid);
-      await setDoc(userRef, {
-        name,
-        email,
-        gender,
-        role: 'driver',
-        createdAt: new Date().toISOString(),
-      });
-
-      // Send user data to your backend
-      await axios.post(api + 'register', {
-        name,
-        email,
-        password,
-        role: 'driver',
-        gender,
-        user_uid: response.user.uid,
-      });
-
-      // Send email verification
-      await sendEmailVerification(response.user);
-
-      alert('Account created successfully! Please check your email for verification before logging in.');
-
-      // Force logout to prevent auto-login after signup
-      await signOut(auth);
-
-      // Redirect to LoginScreen
-      navigation.replace('ProtectedScreen');
-    } catch (error) {
-      console.error('Sign up failed:', error.message);
-      alert('Sign up failed: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container}>

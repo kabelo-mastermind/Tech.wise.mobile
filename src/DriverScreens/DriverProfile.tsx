@@ -29,6 +29,7 @@ import { updateProfile } from "firebase/auth";
 
 import { useDispatch } from 'react-redux';
 import { setUser } from '../redux/actions/authActions';
+import { showToast } from "../constants/showToast"
 
 
 const DriverProfile = ({ navigation }) => {
@@ -58,9 +59,10 @@ const DriverProfile = ({ navigation }) => {
     gender: "",
   })
 
-  // Fetch user data from firestore and db
+  // Fetch user data from Firestore and DB
   useEffect(() => {
-    if (!user_id) return
+    if (!user_id) return;
+
     const fetchFirestoreUser = async () => {
       try {
         const firebaseUser = auth.currentUser;
@@ -76,19 +78,26 @@ const DriverProfile = ({ navigation }) => {
             email: data.email || "",
             gender: data.gender || "",
           });
+        } else {
+          showToast("info", "No Firestore Data", "No data found for this user in Firestore.");
         }
       } catch (err) {
-        console.error("Failed to fetch Firestore user:", err);
+        // console.error("Failed to fetch Firestore user:", err);
+        showToast(
+          "error",
+          "Firestore Error",
+          "Failed to fetch user data from Firestore. Please try again."
+        );
       }
     };
 
     fetchFirestoreUser();
 
     const fetchCustomer = async () => {
-      setLoading(true)
+      setLoading(true);
       try {
-        const res = await axios.get(api + `customer/${user_id}`)
-        setCustomerData(res.data)
+        const res = await axios.get(api + `customer/${user_id}`);
+        setCustomerData(res.data);
 
         // Initialize form data with fetched data
         setFormData({
@@ -99,43 +108,60 @@ const DriverProfile = ({ navigation }) => {
           address: res.data.address || "",
           current_address: res.data.current_address || "",
           gender: res.data.gender || "",
-        })
-      } catch (err) {
-        console.error("Error fetching customer:", err)
-        setError("Failed to fetch customer details.")
-      } finally {
-        setLoading(false)
-      }
-    }
+        });
 
-    fetchCustomer()
-  }, [user_id])
+        showToast("success", "Data Loaded", "Customer data fetched successfully!");
+      } catch (err) {
+        // console.error("Error fetching customer:", err);
+        setError("Failed to fetch customer details.");
+        showToast(
+          "error",
+          "Customer Fetch Error",
+          "Failed to fetch customer details. Please try again."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCustomer();
+  }, [user_id]);
+
 
   // Handle image picking
   const pickImage = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "We need camera roll permissions to change your profile picture.")
-        return
+        showToast(
+          "info",
+          "Permission Denied",
+          "We need camera roll permissions to change your profile picture."
+        );
+        return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Fixed: Use MediaTypeOptions.Images instead of MediaType.IMAGE
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Fixed: Use MediaTypeOptions.Images
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
-      })
+      });
 
       if (!result.canceled) {
-        uploadProfileImage(result.assets[0].uri)
+        uploadProfileImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error("Error picking image:", error)
-      Alert.alert("Error", "Failed to pick image. Please try again.")
+      console.error("Error picking image:", error);
+      showToast(
+        "error",
+        "Image Pick Failed",
+        "Failed to pick image. Please try again."
+      );
     }
-  }
+  };
+
 
   // Upload profile image
   const uploadProfileImage = async (imageUri) => {
@@ -159,7 +185,7 @@ const DriverProfile = ({ navigation }) => {
         'state_changed',
         null,
         (error) => {
-          console.error("Upload error:", error);
+          // console.error("Upload error:", error);
           Alert.alert("Error", "Failed to upload profile picture.");
           setUploadingImage(false);
         },
@@ -201,7 +227,7 @@ const DriverProfile = ({ navigation }) => {
         }
       );
     } catch (error) {
-      console.error("Upload error:", error);
+      // console.error("Upload error:", error);
       Alert.alert("Error", "Something went wrong.");
       setUploadingImage(false);
     }
@@ -217,45 +243,44 @@ const DriverProfile = ({ navigation }) => {
   // Save edited field
   const saveField = async () => {
     if (!selectedField || !fieldValue.trim()) {
-      Alert.alert("Error", "Please enter a valid value.")
-      return
+      showToast("error", "Invalid Input", "Please enter a valid value.");
+      return;
     }
 
-    setIsSaving(true)
+    setIsSaving(true);
     try {
       const updateData = {
         [selectedField]: fieldValue,
         user_id,
-      }
+      };
 
-      const response = await axios.put(api + "update-customer", updateData)
+      const response = await axios.put(api + "update-customer", updateData);
 
       if (response.status === 200) {
         // Update local state
         setCustomerData((prev) => ({
           ...prev,
           [selectedField]: fieldValue,
-        }))
+        }));
 
         // Update form data
         setFormData((prev) => ({
           ...prev,
           [selectedField]: fieldValue,
-        }))
+        }));
 
-        setShowEditModal(false)
-        Alert.alert("Success", "Profile updated successfully!")
+        setShowEditModal(false);
+        showToast("success", "Profile Updated", "Profile updated successfully!");
       } else {
-        Alert.alert("Error", "Failed to update profile.")
+        showToast("error", "Update Failed", "Failed to update profile.");
       }
     } catch (error) {
-      console.error("Error updating profile:", error)
-      Alert.alert("Error", "Failed to update profile. Please try again.")
+      console.error("Error updating profile:", error);
+      showToast("error", "Update Failed", "Failed to update profile. Please try again.");
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
-
+  };
   // Toggle edit mode
   const toggleEditMode = () => {
     setEditMode(!editMode)
@@ -277,22 +302,21 @@ const DriverProfile = ({ navigation }) => {
           ...formData,
         }));
         setEditMode(false);
-        Alert.alert("Success", "Profile updated successfully!");
+        showToast("success", "Profile Updated", "Profile updated successfully!");
       } else {
-        Alert.alert("Error", "Failed to update profile.");
+        showToast("error", "Update Failed", "Failed to update profile.");
       }
 
       // 2. Conditionally update Firestore
       const firebaseUser = auth.currentUser;
-
       if (firebaseUser) {
-        const userRef = doc(db, 'users', firebaseUser.uid);
-        const updates = {};
+        const userRef = doc(db, "users", firebaseUser.uid);
+        const updates: any = {};
 
         if (formData.name !== firestoreData.name) updates.name = formData.name;
         if (formData.email !== firestoreData.email) updates.email = formData.email;
         if (formData.gender !== firestoreData.gender) updates.gender = formData.gender;
-        console.log(updates)
+
         if (Object.keys(updates).length > 0) {
           await updateDoc(userRef, updates);
           setFirestoreData((prev) => ({ ...prev, ...updates }));
@@ -300,7 +324,7 @@ const DriverProfile = ({ navigation }) => {
       }
     } catch (error) {
       console.error("Error updating profile:", error);
-      Alert.alert("Error", "Failed to update profile. Please try again.");
+      showToast("error", "Update Failed", "Failed to update profile. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -328,25 +352,24 @@ const DriverProfile = ({ navigation }) => {
   const [totalCompletedTrips, setTotalCompletedTrips] = useState(0);
 
 
-  // Fetch total trip history
-  const fetchTrips = async () => {
-    try {
-      const res = await axios.get(api + `tripHistory/${user_id}`, {
-        params: { status: 'completed' },
-      })
+// Fetch total trip history
+const fetchTrips = async () => {
+  try {
+    const res = await axios.get(api + `tripHistory/${user_id}`, {
+      params: { status: 'completed' },
+    });
 
-      setTrips(res.data)
-      console.log("Fetched trips:", res.data)
+    setTrips(res.data);
+    // console.log("Fetched trips:", res.data);
 
-      // Get total completed count
-      const totalCompleted = res.data.length
-      // console.log("✅ Total completed trips:", totalCompleted)
-      setTotalCompletedTrips(totalCompleted) // optional state
-
-    } catch (err) {
-      console.error("Error fetching trips:", err)
-    }
+    // Get total completed count
+    const totalCompleted = res.data.length;
+    setTotalCompletedTrips(totalCompleted); // optional state
+  } catch (err) {
+    // console.error("Error fetching trips:", err);
+    showToast("error", "Fetch Failed", "Failed to load trip history. Please try again.");
   }
+};
 
 
   useEffect(() => {
