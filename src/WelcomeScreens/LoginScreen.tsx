@@ -58,103 +58,103 @@ const LoginScreen = ({ navigation }) => {
     return () => unsubscribe();
   }, [navigation, dispatch]);
 
-const signIn = async () => {
-  if (!email || !password) {
-    showToast("info", "Missing Info", "Please enter both email and password.");
-    return;
-  }
+  const signIn = async () => {
+    if (!email || !password) {
+      showToast("info", "Missing Info", "Please enter both email and password.");
+      return;
+    }
 
-  setAuthenticating(true);
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
+    setAuthenticating(true);
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-    // Ensure email verification status is up-to-date
-    await user.reload();
+      // Ensure email verification status is up-to-date
+      await user.reload();
 
-    if (!user.emailVerified) {
-      showToast(
-        "info",
-        "Verify your email 📧",
-        "Please check your inbox before logging in."
+      if (!user.emailVerified) {
+        showToast(
+          "info",
+          "Verify your email 📧",
+          "Please check your inbox before logging in."
+        );
+        navigation.navigate("ProtectedScreen");
+        return;
+      }
+
+      // Retrieve user data from Firestore
+      const userRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        showToast("error", "Account not found", "No user found with this account.");
+        return;
+      }
+
+      const userData = userDoc.data();
+
+      // Check if the user is a driver
+      if (userData.role !== "driver") {
+        showToast("error", "Access denied 🚫", "Only drivers are allowed to log in.");
+        navigation.replace("LogoutPage");
+        return;
+      }
+
+      // Store user details in AsyncStorage
+      await AsyncStorage.setItem("userId", user.uid);
+      await AsyncStorage.setItem("emailVerified", "true");
+
+      setUserId(user.uid);
+      setUserAuth(user);
+
+      // Dispatch user details to Redux
+      dispatch(
+        setUser({
+          name: user.displayName,
+          email: user.email,
+          id: user.uid,
+          role: userData.role,
+        })
       );
-      navigation.navigate("ProtectedScreen");
-      return;
+
+      // Call fetchDriverUserID and pass user and userData
+      fetchDriverUserID(user, userData);
+
+      // ✅ Success toast
+      showToast("success", "Welcome back", "You’ve successfully logged in!");
+    } catch (error: any) {
+      console.log(error);
+
+      // Map Firebase auth error codes to friendly messages
+      let friendlyMessage = "Login failed. Please check your email and password.";
+      if (error.code === "auth/user-not-found") {
+        friendlyMessage = "No account found with this email. Please sign up first.";
+      } else if (error.code === "auth/wrong-password") {
+        friendlyMessage = "Incorrect password. Please try again.";
+      } else if (error.code === "auth/invalid-email") {
+        friendlyMessage = "The email address is invalid. Please check and try again.";
+      } else if (error.code === "auth/too-many-requests") {
+        friendlyMessage = "Too many login attempts. Please try again later.";
+      }
+
+      showToast("error", "Login failed", friendlyMessage);
+    } finally {
+      setAuthenticating(false);
     }
+  };
 
-    // Retrieve user data from Firestore
-    const userRef = doc(db, "users", user.uid);
-    const userDoc = await getDoc(userRef);
 
-    if (!userDoc.exists()) {
-      showToast("error", "Account not found", "No user found with this account.");
-      return;
-    }
-
-    const userData = userDoc.data();
-
-    // Check if the user is a driver
-    if (userData.role !== "driver") {
-      showToast("error", "Access denied 🚫", "Only drivers are allowed to log in.");
-      navigation.replace("LogoutPage");
-      return;
-    }
-
-    // Store user details in AsyncStorage
-    await AsyncStorage.setItem("userId", user.uid);
-    await AsyncStorage.setItem("emailVerified", "true");
-
-    setUserId(user.uid);
-    setUserAuth(user);
-
-    // Dispatch user details to Redux
-    dispatch(
-      setUser({
-        name: user.displayName,
-        email: user.email,
-        id: user.uid,
-        role: userData.role,
-      })
-    );
-
-    // Call fetchDriverUserID and pass user and userData
-    fetchDriverUserID(user, userData);
-
-    // ✅ Success toast
-    showToast("success", "Welcome back", "You’ve successfully logged in!");
-  } catch (error: any) {
-    console.log(error);
-
-    // Map Firebase auth error codes to friendly messages
-    let friendlyMessage = "Login failed. Please check your email and password.";
-    if (error.code === "auth/user-not-found") {
-      friendlyMessage = "No account found with this email. Please sign up first.";
-    } else if (error.code === "auth/wrong-password") {
-      friendlyMessage = "Incorrect password. Please try again.";
-    } else if (error.code === "auth/invalid-email") {
-      friendlyMessage = "The email address is invalid. Please check and try again.";
-    } else if (error.code === "auth/too-many-requests") {
-      friendlyMessage = "Too many login attempts. Please try again later.";
-    }
-
-    showToast("error", "Login failed", friendlyMessage);
-  } finally {
-    setAuthenticating(false);
-  }
-};
-
-  
   const fetchDriverUserID = async (user, userData) => {
     try {
-      const response = await axios.post(api+'login', {
+      const response = await axios.post(api + 'login', {
         email,
       });
-  
+
       const user_id = response.data.id;
       console.log("driver profile picture:", response.data || "N/A");
-      
+
       setUser_Id(user_id);
-  
+
       // Dispatch updated user data to Redux with user_id and userData (role)
       dispatch(setUser({
         name: user.displayName,
@@ -162,7 +162,7 @@ const signIn = async () => {
         id: user.uid,
         role: userData.role,
         user_id: user_id,
-        profile_picture: response.data.profile_picture || "N/A" 
+        profile_picture: response.data.profile_picture || "N/A"
       }));
     } catch (error) {
       console.error("Error fetching driver id:", error);
@@ -180,12 +180,12 @@ const signIn = async () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
-      
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
       >
-        <ScrollView 
+        <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollViewContent}
         >
@@ -201,7 +201,7 @@ const signIn = async () => {
                 resizeMode="cover"
               />
             </LinearGradient>
-            
+
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerTitle}>Welcome Back</Text>
               <Text style={styles.headerSubtitle}>Log in to continue</Text>
@@ -238,7 +238,7 @@ const signIn = async () => {
                   style={styles.input}
                   placeholderTextColor="#94a3b8"
                 />
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.eyeIcon}
                   onPress={() => setSecureTextEntry(!secureTextEntry)}
                 >
@@ -250,7 +250,7 @@ const signIn = async () => {
             </View>
 
             {/* Forgot Password */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.forgotPasswordContainer}
               onPress={() => navigation.navigate('ForgotPasswordScreen')}
             >
@@ -274,10 +274,23 @@ const signIn = async () => {
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.divider} />
-              <Text style={styles.dividerText}>OR</Text>
+              <Text style={styles.dividerText}>Or login in with</Text>
               <View style={styles.divider} />
             </View>
-
+            <View style={styles.socialButtons}>
+              <View style={[styles.socialButton, { opacity: 0.5 }]}>
+                <Image
+                  source={require('../../assets/icons/google.png')} // Replace with your Google PNG image path
+                  style={styles.socialIcon}
+                />
+              </View>
+              <View style={[styles.socialButton, { opacity: 0.5 }]}>
+                <Image
+                  source={require('../../assets/icons/facebook.png')} // Replace with your Facebook PNG image path
+                  style={styles.socialIcon}
+                />
+              </View>
+            </View>
             {/* Sign Up Link */}
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>Don't have an account?</Text>
@@ -428,6 +441,20 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 14,
     fontWeight: '500',
+  },
+  socialButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginBottom: 24,
+  },
+  socialButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // borderWidth: 2,
   },
   signUpContainer: {
     flexDirection: 'row',

@@ -24,87 +24,87 @@ import axios from 'axios';
 import { api } from '../../api';
 import { LinearGradient } from 'expo-linear-gradient'; // If available in your project
 import { showToast } from '../constants/showToast';
-
+import { Ionicons } from '@expo/vector-icons';  // 👈 import icons
 const { width, height } = Dimensions.get('window');
 
 const SignUpScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [gender, setGender] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
-
-const signUp = async () => {
-  if (!gender) {
-    showToast("info", "Missing Info", "Please select your gender.");
-    return;
-  }
-
-  if (!email || !password || !name) {
-    showToast("error", "Incomplete form", "Please fill in all fields.");
-    return;
-  }
-
-  setLoading(true);
-  try {
-    // Create user with email and password
-    const response = await createUserWithEmailAndPassword(auth, email, password);
-
-    // Update profile with the name
-    await updateProfile(response.user, { displayName: name });
-
-    // Store user data in Firestore
-    const userRef = doc(db, "users", response.user.uid);
-    await setDoc(userRef, {
-      name,
-      email,
-      gender,
-      role: "driver",
-      createdAt: new Date().toISOString(),
-    });
-
-    // Send user data to your backend
-    await axios.post(api + "register", {
-      name,
-      email,
-      password,
-      role: "driver",
-      gender,
-      user_uid: response.user.uid,
-    });
-
-    // Send email verification
-    await sendEmailVerification(response.user);
-
-    showToast(
-      "success",
-      "Account created successfully",
-      "Please verify your email before logging in."
-    );
-
-    // Force logout to prevent auto-login after signup
-    await signOut(auth);
-
-    // Redirect to LoginScreen
-    navigation.replace("ProtectedScreen");
-  } catch (error: any) {
-    // Map Firebase error codes to friendly messages
-    let friendlyMessage = "Something went wrong while creating your account. Please try again.";
-
-    if (error.code === "auth/weak-password") {
-      friendlyMessage = "Your password is too weak. Please use at least 6 characters.";
-    } else if (error.code === "auth/invalid-email") {
-      friendlyMessage = "The email you entered is not valid. Please check and try again.";
-    } else if (error.code === "auth/email-already-in-use") {
-      friendlyMessage = "This email is already linked to another account.";
+  // 👇 Add states for showing/hiding passwords
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const signUp = async () => {
+    if (!email || !password || !name || !confirmPassword) {
+      showToast("error", "Incomplete form", "Please fill in all fields.");
+      return;
     }
 
-    showToast("error", "Sign up failed", friendlyMessage);
-  } finally {
-    setLoading(false);
-  }
-};
+    if (password !== confirmPassword) {
+      showToast("error", "Password mismatch", "Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Create user with email and password
+      const response = await createUserWithEmailAndPassword(auth, email, password);
+
+      // Update profile with the name
+      await updateProfile(response.user, { displayName: name });
+
+      // Store user data in Firestore
+      const userRef = doc(db, "users", response.user.uid);
+      await setDoc(userRef, {
+        name,
+        email,
+        role: "driver",
+        createdAt: new Date().toISOString(),
+      });
+
+      // Send user data to your backend
+      await axios.post(api + "register", {
+        name,
+        email,
+        password,
+        role: "driver",
+        user_uid: response.user.uid,
+      });
+
+      // Send email verification
+      await sendEmailVerification(response.user);
+
+      showToast(
+        "success",
+        "Account created successfully",
+        "Please verify your email before logging in."
+      );
+
+      // Force logout to prevent auto-login after signup
+      await signOut(auth);
+
+      // Redirect to LoginScreen
+      navigation.replace("ProtectedScreen");
+    } catch (error: any) {
+      // Map Firebase error codes to friendly messages
+      let friendlyMessage = "Something went wrong while creating your account. Please try again.";
+
+      if (error.code === "auth/weak-password") {
+        friendlyMessage = "Your password is too weak. Please use at least 6 characters.";
+      } else if (error.code === "auth/invalid-email") {
+        friendlyMessage = "The email you entered is not valid. Please check and try again.";
+      } else if (error.code === "auth/email-already-in-use") {
+        friendlyMessage = "This email is already linked to another account.";
+      }
+
+      showToast("error", "Sign up failed", friendlyMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
 
 
@@ -174,59 +174,46 @@ const signUp = async () => {
             {/* Password Input */}
             <View style={styles.inputField}>
               <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, { flexDirection: 'row', alignItems: 'center' }]}>
                 <TextInput
-                  placeholder="Create a strong password"
-                  secureTextEntry
+                  placeholder="Password at least 6 characters"
+                  secureTextEntry={!showPassword}   // 👈 toggle secure entry
                   value={password}
-                  onChangeText={(text) => setPassword(text)}
-                  style={styles.input}
+                  onChangeText={setPassword}
+                  style={[styles.input, { flex: 1 }]}
                   placeholderTextColor="#94a3b8"
                 />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ paddingHorizontal: 10 }}>
+                  <Ionicons
+                    name={showPassword ? "eye-off" : "eye"}
+                    size={22}
+                    color="#64748b"
+                  />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.passwordHint}>
+              {/* <Text style={styles.passwordHint}>
                 Password must be at least 6 characters
-              </Text>
+              </Text> */}
             </View>
 
-            {/* Gender Selection */}
+            {/* Confirm Password Input */}
             <View style={styles.inputField}>
-              <Text style={styles.inputLabel}>Gender</Text>
-              <View style={styles.genderOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.genderOption,
-                    gender === 'male' && styles.selectedGenderOption,
-                  ]}
-                  onPress={() => setGender('male')}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.genderText,
-                      gender === 'male' && styles.selectedGenderText,
-                    ]}
-                  >
-                    Male
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.genderOption,
-                    gender === 'female' && styles.selectedGenderOption,
-                  ]}
-                  onPress={() => setGender('female')}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.genderText,
-                      gender === 'female' && styles.selectedGenderText,
-                    ]}
-                  >
-                    Female
-                  </Text>
+              <Text style={styles.inputLabel}>Confirm Password</Text>
+              <View style={[styles.inputContainer, { flexDirection: 'row', alignItems: 'center' }]}>
+                <TextInput
+                  placeholder="Re-enter your password"
+                  secureTextEntry={!showConfirmPassword}  // 👈 toggle secure entry
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  style={[styles.input, { flex: 1 }]}
+                  placeholderTextColor="#94a3b8"
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ paddingHorizontal: 10 }}>
+                  <Ionicons
+                    name={showConfirmPassword ? "eye-off" : "eye"}
+                    size={22}
+                    color="#64748b"
+                  />
                 </TouchableOpacity>
               </View>
             </View>
@@ -270,7 +257,24 @@ const signUp = async () => {
                 </Text>
               </TouchableOpacity>
             </View>
-
+            <View style={styles.orContainer}>
+              <View style={styles.separator} />
+              <Text style={styles.orText}>Or sign up with</Text>
+            </View>
+            <View style={styles.socialButtons}>
+              <View style={[styles.socialButton, { opacity: 0.5 }]}>
+                <Image
+                  source={require('../../assets/icons/google.png')} // Replace with your Google PNG image path
+                  style={styles.socialIcon}
+                />
+              </View>
+              <View style={[styles.socialButton, { opacity: 0.5 }]}>
+                <Image
+                  source={require('../../assets/icons/facebook.png')} // Replace with your Facebook PNG image path
+                  style={styles.socialIcon}
+                />
+              </View>
+            </View>
             {/* Already Have an Account */}
             <View style={styles.loginContainer}>
               <Text style={styles.loginText}>Already have an account?</Text>
@@ -331,12 +335,13 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#fff',
-    opacity: 0.9,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    color: '#1e293b', // dark slate gray
+    opacity: 1,
+    textShadowColor: 'rgba(255, 255, 255, 0.5)', // light shadow for visibility
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
+
   formContainer: {
     padding: 24,
     backgroundColor: '#fff',
@@ -433,6 +438,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
   },
+    orContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+    separator: {
+    top: '10',
+    width: '100%',
+    height: 1,
+    backgroundColor: 'lightgray',
+  },
+    orText: {
+    position: 'absolute',
+    backgroundColor: 'white',
+    paddingHorizontal: 8,
+    color: 'gray',
+    fontSize: 14,
+  },
+  socialButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginBottom: 24,
+  },
+  socialButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // borderWidth: 2,
+  },
   signUpButtonDisabled: {
     backgroundColor: '#cbd5e1',
     shadowColor: 'transparent',
@@ -463,7 +499,9 @@ const styles = StyleSheet.create({
   },
   termsLink: {
     color: '#0DCAF0',
+    top: 5,
     fontWeight: '500',
+
   },
   loginContainer: {
     flexDirection: 'row',

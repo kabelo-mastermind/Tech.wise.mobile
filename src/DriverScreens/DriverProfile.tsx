@@ -79,14 +79,14 @@ const DriverProfile = ({ navigation }) => {
             gender: data.gender || "",
           });
         } else {
-          showToast("info", "No Firestore Data", "No data found for this user in Firestore.");
+          showToast("info", "No Data", "No data found for this user.");
         }
       } catch (err) {
         // console.error("Failed to fetch Firestore user:", err);
         showToast(
           "error",
-          "Firestore Error",
-          "Failed to fetch user data from Firestore. Please try again."
+          "Network Error",
+          "Failed to fetch user data. Please try again."
         );
       }
     };
@@ -110,14 +110,14 @@ const DriverProfile = ({ navigation }) => {
           gender: res.data.gender || "",
         });
 
-        showToast("success", "Data Loaded", "Customer data fetched successfully!");
+        // showToast("success", "Data Loaded", "user data fetched successfully!");
       } catch (err) {
-        // console.error("Error fetching customer:", err);
-        setError("Failed to fetch customer details.");
+        // console.error("Error fetching user:", err);
+        setError("Failed to fetch user details.");
         showToast(
           "error",
-          "Customer Fetch Error",
-          "Failed to fetch customer details. Please try again."
+          "user Fetch Error",
+          "Failed to fetch user details. Please try again."
         );
       } finally {
         setLoading(false);
@@ -532,7 +532,7 @@ const fetchTrips = async () => {
                       </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
+                    {/* <TouchableOpacity
                       style={[styles.genderOption, formData.gender === "Other" && styles.selectedGenderOption]}
                       onPress={() => handleInputChange("gender", "Other")}
                     >
@@ -544,7 +544,7 @@ const fetchTrips = async () => {
                       >
                         Other
                       </Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                   </View>
                 </View>
               </>
@@ -554,56 +554,56 @@ const fetchTrips = async () => {
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>First Name:</Text>
                   <Text style={styles.infoValue}>{customerData?.name || "Not provided"}</Text>
-                  <TouchableOpacity
+                  {/* <TouchableOpacity
                     style={styles.fieldEditButton}
                     onPress={() => handleEdit("name", customerData?.name || "")}
                   >
                     <Icon name="edit" type="material" size={16} color="#0DCAF0" />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Last Name:</Text>
                   <Text style={styles.infoValue}>{customerData?.lastName || "Not provided"}</Text>
-                  <TouchableOpacity
+                  {/* <TouchableOpacity
                     style={styles.fieldEditButton}
                     onPress={() => handleEdit("lastName", customerData?.lastName || "")}
                   >
                     <Icon name="edit" type="material" size={16} color="#0DCAF0" />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Email:</Text>
                   <Text style={styles.infoValue}>{customerData?.email || "Not provided"}</Text>
-                  <TouchableOpacity
+                  {/* <TouchableOpacity
                     style={styles.fieldEditButton}
                     onPress={() => handleEdit("email", customerData?.email || "")}
                   >
                     <Icon name="edit" type="material" size={16} color="#0DCAF0" />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Phone:</Text>
                   <Text style={styles.infoValue}>{customerData?.phoneNumber || "Not provided"}</Text>
-                  <TouchableOpacity
+                  {/* <TouchableOpacity
                     style={styles.fieldEditButton}
                     onPress={() => handleEdit("phoneNumber", customerData?.phoneNumber || "")}
                   >
                     <Icon name="edit" type="material" size={16} color="#0DCAF0" />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Gender:</Text>
                   <Text style={styles.infoValue}>{customerData?.gender || "Not provided"}</Text>
-                  <TouchableOpacity
+                  {/* <TouchableOpacity
                     style={styles.fieldEditButton}
                     onPress={() => handleEdit("gender", customerData?.gender || "")}
                   >
                     <Icon name="edit" type="material" size={16} color="#0DCAF0" />
-                  </TouchableOpacity>
+                  </TouchableOpacity> */}
                 </View>
               </>
             )}

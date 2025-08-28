@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  Alert, 
-  StyleSheet, 
-  SafeAreaView, 
-  StatusBar, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
+  SafeAreaView,
+  StatusBar,
+  KeyboardAvoidingView,
   Platform,
   Image,
   Dimensions
@@ -33,7 +33,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
     try {
       await sendPasswordResetEmail(auth, email);
       Alert.alert(
-        'Success', 
+        'Success',
         'A password reset link has been sent to your email.',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
@@ -47,7 +47,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
-      
+
       {/* Header */}
       <LinearGradient
         colors={['#0DCAF0', '#0AA8CC']}
@@ -55,7 +55,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
         end={{ x: 1, y: 0 }}
         style={styles.header}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
@@ -64,7 +64,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
         <Text style={styles.headerTitle}>Forgot Password</Text>
         <View style={{ width: 40 }} />
       </LinearGradient>
-      
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
@@ -73,18 +73,18 @@ const ForgotPasswordScreen = ({ navigation }) => {
           {/* Illustration */}
           <View style={styles.illustrationContainer}>
             <Image
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/6195/6195699.png' }}
+              source={require("../../assets/nthomeLogo.png")}
               style={styles.illustration}
               resizeMode="contain"
             />
           </View>
-          
+
           {/* Instructions */}
           <Text style={styles.title}>Reset Your Password</Text>
           <Text style={styles.description}>
             Enter your email address below and we'll send you a link to reset your password.
           </Text>
-          
+
           {/* Form */}
           <View style={styles.formContainer}>
             <Text style={styles.inputLabel}>Email Address</Text>
@@ -99,7 +99,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
                 placeholderTextColor="#94a3b8"
               />
             </View>
-            
+
             <TouchableOpacity
               onPress={handlePasswordReset}
               style={styles.resetButton}
@@ -118,9 +118,9 @@ const ForgotPasswordScreen = ({ navigation }) => {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-          
+
           {/* Back to Login */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backToLoginButton}
             onPress={() => navigation.goBack()}
           >
@@ -159,7 +159,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backButtonText: {
-    fontSize: 20,
+    bottom: 6,
+    fontSize: 25,
     color: '#fff',
     fontWeight: '600',
   },

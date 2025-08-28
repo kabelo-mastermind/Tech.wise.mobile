@@ -71,6 +71,7 @@ const DriverStats = ({ navigation, route }) => {
   const user_id = useSelector((state) => state.auth.user?.user_id || "")
   const profilePicture = useSelector((state) => state.auth.user?.profile_picture || "N/A")
   const [customerData, setCustomerData] = useState(null)
+  console.log("profilePicture from redux:", profilePicture);
 
   useEffect(() => {
     if (!user_id) return
@@ -740,9 +741,14 @@ const DriverStats = ({ navigation, route }) => {
 
         <TouchableOpacity onPress={() => navigation.navigate('DriverProfile')}>
           <Image
-            source={profilePicture ? { uri: profilePicture } : require('../../assets/blankProfilePic.jpg')}
+            source={
+              profilePicture && profilePicture !== "N/A"
+                ? { uri: profilePicture }
+                : require('../../assets/placeholder.jpg')
+            }
             style={styles.profileImage}
           />
+
         </TouchableOpacity>
       </View>
 
