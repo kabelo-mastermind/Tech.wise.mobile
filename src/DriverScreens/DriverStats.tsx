@@ -28,6 +28,7 @@ import { formatSecondsToTimeString, MAX_TIME_PER_DAY_SECONDS } from "../utils/ti
 import axios from "axios"
 import { api } from "../../api"
 import { setSelectedRequest } from "../redux/actions/tripActions"
+import AllCustomAlert from "../components/AllCustomAlert"
 
 const screenWidth = Dimensions.get("window").width
 
@@ -72,7 +73,17 @@ const DriverStats = ({ navigation, route }) => {
   const profilePicture = useSelector((state) => state.auth.user?.profile_picture || "N/A")
   const [customerData, setCustomerData] = useState(null)
   console.log("profilePicture from redux:", profilePicture);
-
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertType, setAlertType] = useState("info");
+  const showAlert = ({ title, message, type = "info" }) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertType(type);
+    setAlertVisible(true);
+  };
+  const hideAlert = () => setAlertVisible(false);
   useEffect(() => {
     if (!user_id) return
     const fetchCustomer = async () => {
@@ -82,7 +93,12 @@ const DriverStats = ({ navigation, route }) => {
         setCustomerData(res.data)
 
       } catch (err) {
-        console.error("Error fetching customer:", err)
+        showAlert({
+          title: "Error",
+          message:
+            "Failed to fetch your profile information. Please check your internet connection and try again.",
+          type: "error",
+        });
       } finally {
         console.log("Customer data fetched successfully")
       }
@@ -110,27 +126,39 @@ const DriverStats = ({ navigation, route }) => {
   // start session function to get session_id
   const startSession = async () => {
     if (!user_id) {
-      console.log("User is not logged in or user_id is missing, skipping start session function to get session_id")
-      return
+      showAlert({
+        title: "Not Logged In",
+        message: "You need to be logged in to start a session.",
+        type: "error",
+      });
+      return null;
     }
 
     try {
       const response = await axios.post(api + "driver/startSession", {
         userId: user_id,
-      })
+      });
 
       if (response.status === 200) {
-        console.log("Session started successfully with session_id:", response.data.session_id)
-        return response.data
+        return response.data;
       } else {
-        console.warn("Unexpected response from startSession:", response.data)
-        return null
+        showAlert({
+          title: "Unexpected Response",
+          message: "We received an unexpected response from the server. Please try again.",
+          type: "error",
+        });
+        return null;
       }
     } catch (error) {
-      console.error("Error starting session:", error)
-      return null
+      showAlert({
+        title: "Error",
+        message:
+          "Failed to start your session. Please check your internet connection and try again.",
+        type: "error",
+      });
+      return null;
     }
-  }
+  };
 
   // Function to check and go online
   const checkAndGoOnline = async () => {
@@ -140,12 +168,18 @@ const DriverStats = ({ navigation, route }) => {
     }
 
     try {
+      // 3️⃣ If approved → proceed with session and set online
       const sessionResponse = await startSession()
       const session_id = sessionResponse?.session_id
       setSessionId(session_id)
 
       if (!session_id) {
-        console.error("No session_id returned from startSession")
+        // console.error("No session_id returned from startSession")
+        showAlert({
+          title: "Error",
+          message: "No session_id returned from startSession. Please try again.",
+          type: "error",
+        })
         return
       }
 
@@ -165,16 +199,77 @@ const DriverStats = ({ navigation, route }) => {
         dispatch(setSelectedRequest({ session_id: session_id }))
       }
     } catch (error) {
-      console.error("Error updating driver status:", error)
+      // console.error("Error updating driver status:", error)
+      showAlert({
+        title: "Error",
+        message: "Something went wrong while trying to go online. Please try again.",
+        type: "error",
+      })
     }
   }
 
-  // handleGoOnline function to start the session and update driver status
+  // 1️⃣ Function to check driver approval status
+  // 1️⃣ Function to check driver approval status
+  const checkDriverApproval = async () => {
+    if (!user_id) return false; // No user, cannot go online
+
+    try {
+      const stateResponse = await axios.get(`${api}getDriverState`, {
+        params: { userId: user_id },
+      });
+
+      const { status } = stateResponse.data;
+
+      if (status !== "approved") {
+        // User exists but not yet approved
+        showAlert({
+          title: "Account Under Review",
+          message:
+            "Your account is still under review. Please ensure all required documents are uploaded and wait for approval from the support team before going online to accept ride requests.",
+          type: "error",
+        });
+        return false;
+      }
+
+      return true; // Approved
+    } catch (error) {
+      // console.error("Error checking driver status:", error);
+
+      // Handle driver not found (404) separately
+      if (error.response && error.response.status === 404) {
+        showAlert({
+          title: "Documents Required",
+          message:
+            "We couldn't find your driver profile. Please upload all required documents first. Once submitted, wait for the support team to approve your account before going online.",
+          type: "error",
+        });
+        return false;
+      }
+
+      // Other errors
+      showAlert({
+        title: "Error",
+        message:
+          "Something went wrong while verifying your account status. Please try again later.",
+        type: "error",
+      });
+      return false;
+    }
+  };
+
+  // 2️⃣ Main function to handle going online
   const handleGoOnline = async () => {
-    animateButton()
-    setIsOnline(true)
-    await checkAndGoOnline()
-  }
+    animateButton();
+
+    const isApproved = await checkDriverApproval();
+    if (!isApproved) {
+      setIsOnline(false);
+      return;
+    }
+
+    setIsOnline(true);
+    await checkAndGoOnline();
+  };
 
   // time tracking functions (end)
   // ----------------------------------------------------------------------------
@@ -228,9 +323,14 @@ const DriverStats = ({ navigation, route }) => {
 
     const fetchDriverStats = async () => {
       if (!user_id || user_id === "") {
-        console.warn("fetchDriverStats aborted: user_id is missing or invalid")
-        return
+        showAlert({
+          title: "Error",
+          message: "Cannot fetch stats because your account is not recognized. Please log in again.",
+          type: "error",
+        });
+        return;
       }
+
 
       setLoadingStats(true)
       setErrorStats(null)
@@ -334,11 +434,21 @@ const DriverStats = ({ navigation, route }) => {
 
         setLoadingStats(false)
       } catch (err) {
-        console.error("Error fetching stats:", err)
-        setErrorStats("Failed to load stats, retrying...")
-        setLoadingStats(false)
-        retryTimeout = setTimeout(fetchDriverStats, 3000)
+        setErrorStats("Failed to load stats, retrying...");
+
+        showAlert({
+          title: "Error",
+          message:
+            "Failed to load your stats. We will retry automatically in a few seconds. Please check your internet connection.",
+          type: "error",
+        });
+
+        setLoadingStats(false);
+
+        // Retry after 3 seconds
+        retryTimeout = setTimeout(fetchDriverStats, 3000);
       }
+
     }
 
     // Only run if user_id exists
@@ -961,6 +1071,14 @@ const DriverStats = ({ navigation, route }) => {
 
       {/* Detail Modal */}
       {renderDetailModal()}
+      {/* CustomAlert */}
+      <AllCustomAlert
+        visible={alertVisible}
+        title={alertTitle}
+        message={alertMessage}
+        type={alertType}
+        hideAlert={hideAlert}
+      />
     </SafeAreaView>
   )
 }

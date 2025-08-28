@@ -69,7 +69,7 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
           setRating(null)
         }
       } catch (err) {
-        console.error("Error fetching customer rating:", err)
+        console.log("Error fetching customer rating:", err)
       }
     }
 
@@ -84,7 +84,7 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
           {[...Array(5)].map((_, i) => (
             <Icon key={i} name="star-outline" size={16} color="#E5E7EB" />
           ))}
-          <Text style={styles.ratingValue}>N/A</Text>
+          <Text style={styles.ratingValue}>0.0</Text>
         </View>
       )
     }

@@ -71,7 +71,7 @@ const Tab = createBottomTabNavigator(); // Create BottomTabNavigator
 function BottomTabNavigator() {
   return (
     <Tab.Navigator
-      initialRouteName="Dashboard" // Set the initial route to Home instead of LoginScreen
+      initialRouteName="DriverStats" // Set the initial route to Home instead of LoginScreen
       screenOptions={{
         headerShown: false, // Disable header for all tab screens
       }}
@@ -91,7 +91,7 @@ function BottomTabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Dashboard"
+        name="DriverStats"
         component={DriverStats}
         options={{
           tabBarIcon: ({ focused, size }) => (

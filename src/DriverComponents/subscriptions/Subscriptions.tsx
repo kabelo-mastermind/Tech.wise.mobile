@@ -102,9 +102,9 @@ const SubscriptionPage = ({ navigation, route }) => {
     try {
       const response = await fetch(`${api}get-customer-id?user_id=${user_id}`)
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch customer ID")
-      }
+      // if (!response.ok) {
+      //   throw new Error("Failed to fetch customer ID")
+      // }
 
       const data = await response.json()
       console.log("Parsed data from backend:", data) // ✅ Properly log the JSON data

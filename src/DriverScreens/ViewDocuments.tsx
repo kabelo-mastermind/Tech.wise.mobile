@@ -21,7 +21,7 @@ import axios from "axios"
 import { api } from "../../api"
 import * as FileSystem from "expo-file-system"
 import { WebView } from "react-native-webview"
-
+import AllCustomAlert from "../components/AllCustomAlert"
 const documentLabels = {
   id_copy: "ID Copy",
   police_clearance: "Police Clearance",
@@ -70,32 +70,61 @@ const ViewDocuments = ({ navigation }) => {
 
   const user = useSelector((state) => state.auth.user)
   const user_id = user?.user_id || null
-
+  const [alertVisible, setAlertVisible] = useState(false)
+  const [alertConfig, setAlertConfig] = useState({
+    title: "",
+    message: "",
+    type: "info",
+    showCancelButton: false,
+    onCancel: null,
+    onConfirm: null,
+  })
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
-
+  const showAlert = (config) => {
+    setAlertConfig({
+      ...config,
+      onCancel: config.onCancel || (() => setAlertVisible(false)),
+      onConfirm: config.onConfirm || (() => setAlertVisible(false)),
+    })
+    setAlertVisible(true)
+  }
   useEffect(() => {
     const fetchDocuments = async () => {
       try {
         const response = await axios.get(`${api}driver_documents/${user_id}`)
-        if (response.data && response.data.documents && response.data.documents.length > 0) {
+        if (response.data && response.data.documents.length > 0) {
           setDocuments(response.data.documents[0])
         }
       } catch (error) {
-        console.error("Error fetching documents:", error)
-        Alert.alert("Error", "Failed to fetch documents. Please try again.")
+        if (error.response?.status === 404) {
+          showAlert({
+            title: "No Documents Found",
+            message:
+              "You haven’t uploaded any documents yet. Please upload them to get approved and start receiving ride requests.",
+          })
+        } else {
+          showAlert({
+            title: "Error",
+            message: "Failed to fetch documents. Please try again.",
+            type: "error",
+          })
+        }
       } finally {
         setLoading(false)
       }
     }
 
-    if (user_id) {
-      fetchDocuments()
-    }
+    if (user_id) fetchDocuments()
   }, [user_id])
+
 
   const handleOpenDocument = async (url) => {
     if (!url) {
-      Alert.alert("Error", "Document URL is missing.")
+      showAlert({
+        title: "Error",
+        message: "Document URL is missing.",
+        type: "error",
+      })
       return
     }
 
@@ -150,8 +179,8 @@ const ViewDocuments = ({ navigation }) => {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
         <View style={styles.pdfViewerHeader}>
-          <TouchableOpacity 
-            onPress={() => setPdfUrlToView(null)} 
+          <TouchableOpacity
+            onPress={() => setPdfUrlToView(null)}
             style={styles.pdfViewerCloseButton}
           >
             <Ionicons name="close" size={28} color="#FFFFFF" />
@@ -212,7 +241,7 @@ const ViewDocuments = ({ navigation }) => {
       </View>
 
       {/* Document List with improved card design */}
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
@@ -234,9 +263,9 @@ const ViewDocuments = ({ navigation }) => {
 
         {documentsToDisplay.length > 0 ? (
           documentsToDisplay.map((doc) => (
-            <TouchableOpacity 
-              key={doc.id} 
-              style={styles.docListItem} 
+            <TouchableOpacity
+              key={doc.id}
+              style={styles.docListItem}
               onPress={() => handleOpenDocument(doc.url)}
               activeOpacity={0.8}
             >
@@ -264,8 +293,8 @@ const ViewDocuments = ({ navigation }) => {
       </ScrollView>
 
       {/* Floating action button with modern styling */}
-      <TouchableOpacity 
-        style={styles.createDocumentButton} 
+      <TouchableOpacity
+        style={styles.createDocumentButton}
         onPress={() => navigation.navigate("UploadDocuments")}
         activeOpacity={0.9}
       >
@@ -274,6 +303,16 @@ const ViewDocuments = ({ navigation }) => {
       </TouchableOpacity>
 
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
+      {/* Reusable alert */}
+      <AllCustomAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        showCancelButton={alertConfig.showCancelButton}
+        onCancel={alertConfig.onCancel}
+        onConfirm={alertConfig.onConfirm}
+      />
     </SafeAreaView>
   )
 }
