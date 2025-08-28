@@ -1,7 +1,15 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking, Alert, ScrollView } from "react-native"
+import React, { useEffect, useState } from "react"
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Linking,
+  ScrollView,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import axios from "axios"
 import { useSelector } from "react-redux"
@@ -9,6 +17,7 @@ import WebView from "react-native-webview"
 import { api } from "../../../api"
 import CustomDrawer from "../../components/CustomDrawer"
 import { Icon } from "react-native-elements"
+import AwesomeAlert from "react-native-awesome-alerts"
 
 const ManageSubscription = ({ navigation, route }) => {
   const { customerId, interval, latestSubscriptionCode } = route.params
@@ -21,6 +30,42 @@ const ManageSubscription = ({ navigation, route }) => {
   const [emailToken, setEmailToken] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
+
+  // AwesomeAlert state
+  const [alertVisible, setAlertVisible] = useState(false)
+  const [alertTitle, setAlertTitle] = useState("")
+  const [alertMessage, setAlertMessage] = useState("")
+  const [alertType, setAlertType] = useState("info") // 'info', 'success', 'error'
+  const [alertConfirmCallback, setAlertConfirmCallback] = useState<(() => void) | null>(null)
+  const [alertCancelCallback, setAlertCancelCallback] = useState<(() => void) | null>(null)
+  const [alertShowCancelButton, setAlertShowCancelButton] = useState(false)
+  const [alertConfirmText, setAlertConfirmText] = useState("OK")
+  const [alertCancelText, setAlertCancelText] = useState("Cancel")
+
+  const showAlert = ({
+    title = "",
+    message = "",
+    type = "info",
+    onConfirm = null as (() => void) | null | undefined,
+    onCancel = null as (() => void) | null | undefined,
+    showCancelButton = false,
+    confirmText = "OK",
+    cancelText = "Cancel",
+  }) => {
+    setAlertTitle(title)
+    setAlertMessage(message)
+    setAlertType(type)
+    setAlertConfirmCallback(() => onConfirm)
+    setAlertCancelCallback(() => onCancel)
+    setAlertShowCancelButton(showCancelButton)
+    setAlertConfirmText(confirmText)
+    setAlertCancelText(cancelText)
+    setAlertVisible(true)
+  }
+
+  const hideAlert = () => {
+    setAlertVisible(false)
+  }
 
   useEffect(() => {
     const fetchSubscriptions = async () => {
@@ -44,7 +89,12 @@ const ManageSubscription = ({ navigation, route }) => {
           console.log("No active subscriptions found for the customer.")
         }
       } catch (error) {
-        console.error("Error fetching subscriptions:", error)
+       // console.error("Error fetching subscriptions:", error)
+          showAlert({
+          title: "Error",
+          message: "Failed to load subscriptions.",
+          type: "error",
+        })
       } finally {
         setIsLoading(false)
       }
@@ -69,10 +119,18 @@ const ManageSubscription = ({ navigation, route }) => {
         Linking.openURL(paystackLink) // Open Paystack page
         navigation.navigate("Subscriptions")
       } else {
-        Alert.alert("Error", "Could not get update link.")
+       showAlert({
+          title: "Error",
+          message: "Could not get update link.",
+          type: "error",
+        })
       }
     } catch (error) {
-      Alert.alert("Error", error.response?.data?.error || "Something went wrong")
+      showAlert({
+        title: "Error",
+        message: error.response?.data?.error || "Something went wrong",
+        type: "error",
+      })
     }
     setIsLoading(false)
   }
@@ -130,34 +188,71 @@ const ManageSubscription = ({ navigation, route }) => {
   //     setIsLoading(false)
   //   }
   // }
+     const confirmSubscriptionChange = () => {
+    showAlert({
+      title: "Confirm Subscription Change",
+      message: "Are you sure you want to change your subscription plan? This will cancel your current subscription.",
+      type: "info",
+      showCancelButton: true,
+      confirmText: "Confirm",
+      cancelText: "Cancel",
+      onConfirm: () => { handleChangeSubscription() },
+      onCancel: hideAlert,
+    })
+  }
+  
 
-  const handleChangeSubscription = async () => {
+   const handleChangeSubscription = async () => {
+    hideAlert()
+    setIsLoading(true)
     try {
       const cancelResponse = await axios.post(api + "cancel-subscription", {
         code: latestSubscriptionCode,
         token: subscription.email_token,
-      });
+      })
 
-      if (cancelResponse.status === 200) {
-        const { message, subscription_status } = cancelResponse.data;
-        navigation.navigate("Subscriptions", { status: "non-renewing" });
-        Alert.alert("Success", message || "Subscription canceled. Please choose a new plan.");
-        // // If subscription is now non-renewing, navigate
-        // if (subscription.status === "non-renewing") {
-        //   navigation.navigate("Subscriptions", { status: "non-renewing" });
-        // }
+      if (cancelResponse.status === 200 && subscription.status === "active") {
+        const { message } = cancelResponse.data
+        showAlert({
+          title: "Success",
+          message: /*message ||*/ "Subscription canceled successful. Please choose a new plan.",
+          type: "success",
+          onConfirm: () => {
+            hideAlert()
+            navigation.navigate("Subscriptions", { status: "non-renewing" })
+          },
+          confirmText: "OK",
+        })
       } else {
-        Alert.alert("Error", "Failed to cancel the current subscription.");
+        showAlert({
+          title: "Subscription Status",
+          message: "Unable to cancel - no active subscription found. Would you like to view available plans?",
+          type: "info",
+          showCancelButton: true,
+          confirmText: "View Plans",
+          cancelText: "Cancel",
+          onConfirm: () => {
+            hideAlert()
+            navigation.goBack()
+          },
+          onCancel: hideAlert,
+        })
       }
     } catch (error) {
-      console.error("Error downgrading subscription:", error);
+      //console.error("Error downgrading subscription:", error)
 
       const errorMessage =
-        error.response?.data?.message || "Something went wrong. Please try again.";
+        error.response?.data?.message || "Something went wrong. Please try again."
 
-      Alert.alert("Error", errorMessage);
+      showAlert({
+        title: "Error",
+        message: errorMessage,
+        type: "error",
+      })
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }
   
   if (isLoading) {
     return (
@@ -264,12 +359,12 @@ const ManageSubscription = ({ navigation, route }) => {
                   </TouchableOpacity>
 
                   {subscription.plan.interval === "weekly" ? (
-                    <TouchableOpacity style={styles.secondaryButton} onPress={handleChangeSubscription}>
+                    <TouchableOpacity style={styles.secondaryButton} onPress={confirmSubscriptionChange}>
                       <Icon type="material-community" name="arrow-up-circle-outline" color="#0DCAF0" size={20} style={styles.buttonIcon} />
                       <Text style={styles.secondaryButtonText}>Upgrade to Monthly</Text>
                     </TouchableOpacity>
                   ) : (
-                    <TouchableOpacity style={styles.secondaryButton} onPress={handleChangeSubscription}>
+                    <TouchableOpacity style={styles.secondaryButton} onPress={confirmSubscriptionChange}>
                       <Icon type="material-community" name="arrow-down-circle-outline" color="#0DCAF0" size={20} style={styles.buttonIcon} />
                       <Text style={styles.secondaryButtonText}>Downgrade to Weekly</Text>
                     </TouchableOpacity>
@@ -297,10 +392,34 @@ const ManageSubscription = ({ navigation, route }) => {
           </ScrollView>
         </>
       )}
-      <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
+     <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
+
+      {/* Awesome Alert */}
+      <AwesomeAlert
+        show={alertVisible}
+        showProgress={false}
+        title={alertTitle}
+        message={alertMessage}
+        closeOnTouchOutside={false}
+        closeOnHardwareBackPress={false}
+        showCancelButton={alertShowCancelButton}
+        showConfirmButton={true}
+        cancelText={alertCancelText}
+        confirmText={alertConfirmText}
+        confirmButtonColor={alertType === "error" ? "#DD6B55" : "#0DCAF0"}
+        onCancelPressed={() => {
+          hideAlert()
+          alertCancelCallback && alertCancelCallback()
+        }}
+        onConfirmPressed={() => {
+          hideAlert()
+          alertConfirmCallback && alertConfirmCallback()
+        }}
+      />
     </SafeAreaView>
   )
 }
+
 
 const styles = StyleSheet.create({
   container: {

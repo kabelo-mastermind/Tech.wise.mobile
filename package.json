@@ -31,6 +31,7 @@
     "expo": "^52.0.47",
     "expo-blur": "~14.0.3",
     "expo-constants": "~17.0.8",
+    "expo-dev-client": "~5.0.20",
     "expo-document-picker": "~13.0.3",
     "expo-file-system": "~18.0.12",
     "expo-font": "~13.0.4",
@@ -48,8 +49,10 @@
     "nativewind": "^4.1.23",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "react-hot-toast": "^2.6.0",
     "react-native": "0.76.9",
     "react-native-animatable": "^1.4.0",
+    "react-native-awesome-alerts": "^2.0.0",
     "react-native-chart-kit": "^6.12.0",
     "react-native-elements": "^3.4.3",
     "react-native-fs": "^2.20.0",
@@ -104,5 +107,17 @@
       }
     }
   },
-  "private": true
+  "private": true,
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kabelo-mastermind/Tech.wise.mobile.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/kabelo-mastermind/Tech.wise.mobile/issues"
+  },
+  "homepage": "https://github.com/kabelo-mastermind/Tech.wise.mobile#readme"
 }

@@ -8,6 +8,7 @@ import WebView from "react-native-webview"
 import { api } from "../../../api"
 import CustomDrawer from "../../components/CustomDrawer"
 import { Icon } from "react-native-elements"
+import AwesomeAlert from "react-native-awesome-alerts"
 
 const SubscriptionPage = ({ navigation, route }) => {
   const [isFirstTime, setIsFirstTime] = useState(null)
@@ -21,10 +22,59 @@ const SubscriptionPage = ({ navigation, route }) => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [selectedPlanType, setSelectedPlanType] = useState(null)
   const [selectedCost, setSelectedCost] = useState(null)
-  const { status } = route.params || {} // Provide an empty object as fallback
+  const [status, setStatus] = useState(null)// Provide an empty object as fallback
   console.log("statusooooooooooooo--------", status)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
+
+    // AwesomeAlert state
+    const [alertVisible, setAlertVisible] = useState(false)
+    const [alertTitle, setAlertTitle] = useState("")
+    const [alertMessage, setAlertMessage] = useState("")
+    const [alertType, setAlertType] = useState("info") // 'info', 'success', 'error'
+    const [alertConfirmCallback, setAlertConfirmCallback] = useState<(() => void) | null>(null)
+    const [alertCancelCallback, setAlertCancelCallback] = useState<(() => void) | null>(null)
+    const [alertShowCancelButton, setAlertShowCancelButton] = useState(false)
+    const [alertConfirmText, setAlertConfirmText] = useState("OK")
+    const [alertCancelText, setAlertCancelText] = useState("Cancel")
+  
+    const showAlert = ({
+      title = "",
+      message = "",
+      type = "info",
+      onConfirm = null as (() => void) | null | undefined,
+      onCancel = null as (() => void) | null | undefined,
+      showCancelButton = false,
+      confirmText = "OK",
+      cancelText = "Cancel",
+    }) => {
+      setAlertTitle(title)
+      setAlertMessage(message)
+      setAlertType(type)
+      setAlertConfirmCallback(() => onConfirm)
+      setAlertCancelCallback(() => onCancel)
+      setAlertShowCancelButton(showCancelButton)
+      setAlertConfirmText(confirmText)
+      setAlertCancelText(cancelText)
+      setAlertVisible(true)
+    }
+  
+    const hideAlert = () => {
+      setAlertVisible(false)
+    }
+  
+
+  useEffect(() => {
+    if (route.params?.status) {  
+      setStatus(route.params.status)
+      console.log("Updated status from route params:", route.params.status)
+    }else{
+      const  newstatus=status;
+      setStatus(newstatus)
+      console.log("Updated status from newstatus:", newstatus)  
+    }
+     
+  }, [route.params?.status])
 
   // fetch customer ID and subscriptions when the component mounts
   useEffect(() => {
@@ -62,7 +112,11 @@ const SubscriptionPage = ({ navigation, route }) => {
       return data.customer_id || null // Return null if not found
     } catch (error) {
       // console.error("Error fetching customer ID:", error.message);
-      Alert.alert("Choose subscription option")
+      showAlert({
+        title: "Error",
+        message: error.message || "An unexpected error occurred. Please try again.",
+        type: "error",
+      })
       return null
     }
   }
@@ -85,6 +139,9 @@ const SubscriptionPage = ({ navigation, route }) => {
         const latestSubscription = subscriptions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
 
         const latestSubscriptionCode = latestSubscription.subscription_code
+        const latestStatus = latestSubscription.status
+        setStatus(latestStatus) // Update status state
+        console.log("Latest subscription status:", latestStatus)
 
         setLatestSubscriptionCode(latestSubscriptionCode)
         console.log("Latest subscription code:", latestSubscriptionCode)
@@ -94,7 +151,12 @@ const SubscriptionPage = ({ navigation, route }) => {
         return null
       }
     } catch (error) {
-      console.error("Error fetching subscriptions:", error)
+      //console.error("Error fetching subscriptions:", error)
+      showAlert({
+        title: "Error",
+        message: error.message || "An unexpected error occurred. Please try again.",
+        type: "error",
+      })
       return null
     }
   }
@@ -132,8 +194,12 @@ const SubscriptionPage = ({ navigation, route }) => {
         Alert.alert("Error", "Failed to initialize transaction.")
       }
     } catch (error) {
-      console.error("Error:", error.message)
-      Alert.alert("Error", "Something went wrong. Please try again.")
+      //console.error("Error:", error.message)
+      showAlert({
+        title: "Error",
+        message: error.message || "An unexpected error occurred. Please try again.",
+        type: "error",
+      })
     } finally {
       setIsProcessing(false)
     }
@@ -160,7 +226,11 @@ const SubscriptionPage = ({ navigation, route }) => {
             }
           } else if (navState.url.includes("payment-error")) {
             setAuthorizationUrl(null)
-            Alert.alert("Error", "Payment failed. Please try again.")
+            showAlert({
+        title: "Error",
+        message: "Payment failed or was canceled. Please try again.",
+        type: "error",
+      })
           }
         }}
       />
@@ -171,7 +241,11 @@ const SubscriptionPage = ({ navigation, route }) => {
     const planType = subscription?.planType || "N/A"
     const cost = subscription?.cost || 0
     if (!latestSubscriptionCode) {
-      Alert.alert("Error", "No active subscription found.")
+      showAlert({
+        title: "Error",
+        message: "No active subscription found.",
+        type: "error",
+      })
       return
     }
 
@@ -322,6 +396,29 @@ const SubscriptionPage = ({ navigation, route }) => {
       </ScrollView>
 
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
+
+       {/* Awesome Alert */}
+            <AwesomeAlert
+              show={alertVisible}
+              showProgress={false}
+              title={alertTitle}
+              message={alertMessage}
+              closeOnTouchOutside={false}
+              closeOnHardwareBackPress={false}
+              showCancelButton={alertShowCancelButton}
+              showConfirmButton={true}
+              cancelText={alertCancelText}
+              confirmText={alertConfirmText}
+              confirmButtonColor={alertType === "error" ? "#DD6B55" : "#0DCAF0"}
+              onCancelPressed={() => {
+                hideAlert()
+                alertCancelCallback && alertCancelCallback()
+              }}
+              onConfirmPressed={() => {
+                hideAlert()
+                alertConfirmCallback && alertConfirmCallback()
+              }}
+            />
     </SafeAreaView>
   )
 }
