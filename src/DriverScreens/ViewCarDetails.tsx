@@ -11,24 +11,22 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  FlatList, // Using FlatList for better performance with lists
+  FlatList,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import CustomDrawer from "../components/CustomDrawer"
 import { Icon } from "react-native-elements"
 import { useSelector } from "react-redux"
 import axios from "axios"
-import { api } from "../../api" // Adjust path to your api.js
+import { api } from "../../api"
 
 const { width } = Dimensions.get("window")
 
 const ViewCarDetails = ({ navigation }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [carListings, setCarListings] = useState([]) // Changed to an array
+  const [carListings, setCarListings] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [selectedCarId, setSelectedCarId] = useState(null) // State for selected car ID
 
   const user = useSelector((state) => state.auth.user)
   const user_id = user?.user_id || null
@@ -45,11 +43,10 @@ const ViewCarDetails = ({ navigation }) => {
       setLoading(true)
       const response = await axios.get(`${api}car_listing/user/${user_id}`)
       if (response.data && response.data.carListings && response.data.carListings.length > 0) {
-        // Sort by ID in descending order to show newest first, or by any preferred order
         const sortedCarListings = response.data.carListings.sort((a, b) => b.id - a.id)
-        setCarListings(sortedCarListings) // Set the entire sorted array
+        setCarListings(sortedCarListings)
       } else {
-        setCarListings([]) // No cars found, set to empty array
+        setCarListings([])
       }
     } catch (err) {
       console.error("Error fetching car details:", err)
@@ -64,88 +61,20 @@ const ViewCarDetails = ({ navigation }) => {
     fetchCarDetails()
     const unsubscribe = navigation.addListener("focus", () => {
       fetchCarDetails()
-      setSelectedCarId(null) // Deselect card when screen is focused again
     })
     return unsubscribe
   }, [user_id, navigation, fetchCarDetails])
 
-  const handleCardPress = (carId) => {
-    // Toggle selection: if already selected, deselect; otherwise, select
-    setSelectedCarId(selectedCarId === carId ? null : carId)
-  }
-
-  // Find the currently selected car object
-  const selectedCarObject = carListings.find((car) => car.id === selectedCarId)
-
-  const handleEditPress = () => {
-    if (!selectedCarObject) {
-      Alert.alert("Selection Required", "Please tap a car card to select it before editing.")
-      return
-    }
-    Alert.alert(
-      "Confirm Edit",
-      "You are about to edit your car details. Please note that all changes will be reviewed by admin and may take up to 24 hours to reflect. Do you wish to proceed?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-          onPress: () => setSelectedCarId(null), // Deselect on cancel
-        },
-        {
-          text: "Proceed",
-          onPress: () => {
-            navigation.navigate("CarListing", { carDetails: selectedCarObject }) // Pass the selected car object
-            setSelectedCarId(null) // Deselect after navigating
-          },
-        },
-      ],
-    )
-  }
-
-  const handleDelete = async () => {
-    if (!selectedCarObject) {
-      Alert.alert("Selection Required", "Please tap a car card to select it before deleting.")
-      return
-    }
-    Alert.alert("Confirm Deletion", "Are you sure you want to delete this car listing? This action cannot be undone.", [
-      {
-        text: "Cancel",
-        style: "cancel",
-        onPress: () => setSelectedCarId(null), // Deselect on cancel
-      },
-      {
-        text: "Delete",
-        onPress: async () => {
-          setIsDeleting(true)
-          try {
-            const response = await axios.delete(`${api}car_listing/${selectedCarObject.id}`)
-            if (response.status === 200 || response.status === 204) {
-              Alert.alert("Success", "Car listing deleted successfully!", [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    fetchCarDetails() // Re-fetch all cars to update the list
-                    setSelectedCarId(null) // Deselect after action
-                  },
-                },
-              ])
-            } else {
-              Alert.alert("Error", response.data.error || "Failed to delete car listing.")
-            }
-          } catch (error) {
-            console.error("Delete error:", error)
-            Alert.alert("Error", "Failed to delete car listing. Please try again.")
-          } finally {
-            setIsDeleting(false)
-          }
-        },
-        style: "destructive",
-      },
-    ])
-  }
-
   const handleAddNewCar = () => {
-    navigation.navigate("CarListing") // Navigate without carDetails to trigger creation mode
+    // If user has existing cars, pass the first one as template data
+    if (carListings.length > 0) {
+      // Pass the most recent car as template for pre-population
+      const templateCar = carListings[0];
+      navigation.navigate("CarListing", { carDetails: templateCar });
+    } else {
+      // No existing cars, navigate without data for fresh form
+      navigation.navigate("CarListing");
+    }
   }
 
   if (loading) {
@@ -170,7 +99,6 @@ const ViewCarDetails = ({ navigation }) => {
   }
 
   if (carListings.length === 0) {
-    // Check if the array is empty
     return (
       <SafeAreaView style={styles.noCarContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
@@ -186,7 +114,7 @@ const ViewCarDetails = ({ navigation }) => {
           <Text style={styles.noCarSubText}>Start by listing your first car!</Text>
           <TouchableOpacity
             style={styles.listCarButton}
-            onPress={handleAddNewCar} // Use the new handler
+            onPress={handleAddNewCar}
           >
             <Text style={styles.listCarButtonText}>List My Car</Text>
           </TouchableOpacity>
@@ -209,19 +137,8 @@ const ViewCarDetails = ({ navigation }) => {
       carClassText = `Class: ${car.class}`
     }
 
-    const isCurrentCarSelected = selectedCarId === car.id
-
     return (
-      <TouchableOpacity
-        style={[styles.card, isCurrentCarSelected && styles.selectedCardBorder]}
-        onPress={() => handleCardPress(car.id)}
-        activeOpacity={0.8} // Give feedback on press
-      >
-        {isCurrentCarSelected && (
-          <View style={styles.checkmarkContainer}>
-            <Ionicons name="checkmark-circle" size={30} color="#0DCAF0" />
-          </View>
-        )}
+      <View style={styles.card}>
         {car.car_image ? (
           <Image source={{ uri: car.car_image }} style={styles.carImage} />
         ) : (
@@ -251,7 +168,7 @@ const ViewCarDetails = ({ navigation }) => {
             <Text style={styles.detailText}>{carClassText}</Text>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
     )
   }
 
@@ -264,7 +181,7 @@ const ViewCarDetails = ({ navigation }) => {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Car Details</Text>
       </View>
-      <FlatList // Changed from ScrollView to FlatList
+      <FlatList
         data={carListings}
         renderItem={renderCarItem}
         keyExtractor={(item) => String(item.id)}
@@ -272,50 +189,21 @@ const ViewCarDetails = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={() => (
           <View style={styles.instructionsContainer}>
-            <Text style={styles.instructionsTitle}>How to Manage Your Car Details:</Text>
+            <Text style={styles.instructionsTitle}>Your Car Details:</Text>
             <Text style={styles.instructionsText}>
-              • Tap on a car card below to select it. Once selected, you can edit or delete its details.
+              • Below are your current car listings
             </Text>
             <Text style={styles.instructionsText}>
-              • To update any car information, select the car and tap "Edit Car Details".
+              • To add another car, tap the "Add New Car" button below
             </Text>
-            <Text style={styles.instructionsText}>• To add a new car, tap the "Add New Car" button below.</Text>
           </View>
         )}
         ListFooterComponent={() => (
           <View style={styles.footerButtonsContainer}>
-            {/* Edit Button */}
-            {/* <TouchableOpacity
-              style={[styles.editButton, !selectedCarObject && styles.actionButtonDisabled]}
-              onPress={handleEditPress}
-              disabled={!selectedCarObject}
-            >
-              <Ionicons name="pencil-outline" size={20} color="#fff" style={styles.editIcon} />
-              <Text style={styles.editButtonText}>Edit Car Details</Text>
-            </TouchableOpacity> */}
-            {/* Delete Button */}
-            <TouchableOpacity
-              style={[
-                styles.deleteButton,
-                !selectedCarObject && styles.actionButtonDisabled,
-                isDeleting && styles.deleteButtonDisabled,
-              ]}
-              onPress={handleDelete}
-              disabled={!selectedCarObject || isDeleting}
-            >
-              {isDeleting ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="trash" size={20} color="#fff" style={styles.deleteIcon} />
-                  <Text style={styles.deleteButtonText}>Delete Car</Text>
-                </>
-              )}
-            </TouchableOpacity>
             {/* Add New Car Button */}
             <TouchableOpacity style={styles.addNewCarButton} onPress={handleAddNewCar}>
-              <Ionicons name="add-circle-outline" size={20} color="#fff" style={styles.editIcon} />
-              <Text style={styles.editButtonText}>Add New Car</Text>
+              <Ionicons name="add-circle-outline" size={20} color="#fff" style={styles.addIcon} />
+              <Text style={styles.addButtonText}>Add New Car</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -434,7 +322,6 @@ const styles = StyleSheet.create({
     marginRight: 40,
   },
   flatListContent: {
-    // New style for FlatList content container
     paddingBottom: 40,
     paddingHorizontal: 16,
     paddingTop: 20,
@@ -449,22 +336,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
     overflow: "hidden",
-    position: "relative", // Needed for absolute positioning of checkmark
-  },
-  selectedCardBorder: {
-    // New style for selected card
-    borderColor: "#0DCAF0",
-    borderWidth: 3,
-  },
-  checkmarkContainer: {
-    // New style for checkmark icon
-    position: "absolute",
-    top: 10,
-    right: 10,
-    zIndex: 1, // Ensure it's above the image
-    backgroundColor: "white",
-    borderRadius: 15,
-    padding: 2,
   },
   carImage: {
     width: "100%",
@@ -511,11 +382,10 @@ const styles = StyleSheet.create({
     color: "#495057",
   },
   footerButtonsContainer: {
-    // New container for action buttons
     marginTop: 10,
   },
-  editButton: {
-    backgroundColor: "#0DCAF0",
+  addNewCarButton: {
+    backgroundColor: "#28a745",
     borderRadius: 12,
     paddingVertical: 16,
     marginHorizontal: 0,
@@ -529,40 +399,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  editIcon: {
+  addIcon: {
     marginRight: 8,
   },
-  editButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  deleteButton: {
-    backgroundColor: "#dc3545",
-    borderRadius: 12,
-    paddingVertical: 16,
-    marginHorizontal: 0,
-    marginTop: 10,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  deleteButtonDisabled: {
-    backgroundColor: "#e9a8af",
-  },
-  actionButtonDisabled: {
-    // New style for disabled action buttons
-    opacity: 0.5,
-  },
-  deleteIcon: {
-    marginRight: 8,
-  },
-  deleteButtonText: {
+  addButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
@@ -589,22 +429,6 @@ const styles = StyleSheet.create({
     color: "#6c757d",
     marginBottom: 5,
     lineHeight: 20,
-  },
-  addNewCarButton: {
-    // New style for the "Add New Car" button
-    backgroundColor: "#28a745", // Green color for add
-    borderRadius: 12,
-    paddingVertical: 16,
-    marginHorizontal: 0,
-    marginTop: 10,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
 })
 

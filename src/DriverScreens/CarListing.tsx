@@ -25,58 +25,75 @@ import { useSelector } from 'react-redux';
 import { api } from '../../api';
 
 // Firebase imports
-import { storage } from '../../firebase'; // Firebase Storage Import - Keeping your original path
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'; // Added deleteObject
+import { storage } from '../../firebase';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 
 const { width } = Dimensions.get('window');
 
 const CarListing = ({ navigation }) => {
   const route = useRoute();
-  const editingCar = route.params?.carDetails || null; // Get car details if passed for editing
+  const templateCar = route.params?.carDetails || null; // Get car details if passed as template
 
   const user = useSelector((state) => state.auth.user);
   const user_id = user?.user_id || null;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [carDetails, setCarDetails] = useState({
-    car_id: null, // This will store the car's ID for editing/updating
+    car_id: null,
     carMaker: '',
     carModel: '',
     carYear: '',
     carSeats: '',
     carColor: '',
-    carImage: null, // This will store the local URI or a { uri: 'http://...' } object
+    carImage: null,
     licensePlate: '',
   });
 
-  useEffect(() => {
-    if (editingCar) {
-      console.log("CarListing: Entering edit mode. Initializing form with car ID from 'id' field:", editingCar.id);
-      setCarDetails({
-        car_id: editingCar.id, // <--- CHANGED THIS LINE: Use editingCar.id
-        carMaker: editingCar.car_make,
-        carModel: editingCar.car_model,
-        carYear: String(editingCar.car_year), // Ensure year is string for TextInput
-        carSeats: String(editingCar.number_of_seats), // Ensure seats is string
-        carColor: editingCar.car_colour,
-        carImage: editingCar.car_image ? { uri: editingCar.car_image } : null, // Set existing image URI
-        licensePlate: editingCar.license_plate,
-      });
-    } else {
-      console.log("CarListing: Entering create mode. Resetting form fields.");
-      // Explicitly reset carDetails to initial empty state for new creation
-      setCarDetails({
-        car_id: null,
-        carMaker: '',
-        carModel: '',
-        carYear: '',
-        carSeats: '',
-        carColor: '',
-        carImage: null,
-        licensePlate: '',
-      });
-    }
-  }, [editingCar]); // This dependency ensures it runs when navigation params change
+  // Determine if we're in template mode (using existing data for new car)
+  const isTemplateMode = templateCar && !templateCar.id;
+
+ useEffect(() => {
+  if (templateCar && templateCar.id) {
+    console.log("CarListing: Editing existing car with ID:", templateCar.id);
+    // We have an existing car with ID, so we're in edit mode
+    setCarDetails({
+      car_id: templateCar.id, // Set the car_id for updating
+      carMaker: templateCar.car_make || '',
+      carModel: templateCar.car_model || '',
+      carYear: templateCar.car_year ? String(templateCar.car_year) : '',
+      carSeats: templateCar.number_of_seats ? String(templateCar.number_of_seats) : '',
+      carColor: templateCar.car_colour || '',
+      carImage: templateCar.car_image ? { uri: templateCar.car_image } : null,
+      licensePlate: templateCar.license_plate || '',
+    });
+  } else if (templateCar) {
+    console.log("CarListing: Using template car data for pre-population (new car)");
+    // We have template data but no ID, so we're creating a new car with template data
+    setCarDetails({
+      car_id: null, // No ID for new car
+      carMaker: templateCar.car_make || '',
+      carModel: templateCar.car_model || '',
+      carYear: templateCar.car_year ? String(templateCar.car_year) : '',
+      carSeats: templateCar.number_of_seats ? String(templateCar.number_of_seats) : '',
+      carColor: templateCar.car_colour || '',
+      carImage: templateCar.car_image ? { uri: templateCar.car_image } : null,
+      licensePlate: templateCar.license_plate || '',
+    });
+  } else {
+    console.log("CarListing: Starting with empty form for new car");
+    // No template data, fresh form
+    setCarDetails({
+      car_id: null,
+      carMaker: '',
+      carModel: '',
+      carYear: '',
+      carSeats: '',
+      carColor: '',
+      carImage: null,
+      licensePlate: '',
+    });
+  }
+}, [templateCar]);
 
   const handleImageUpload = async () => {
     try {
@@ -111,12 +128,9 @@ const CarListing = ({ navigation }) => {
     }
     try {
       const urlObj = new URL(url);
-      // Pathname typically looks like /v0/b/{bucket}/o/{path_to_file}
       const pathSegments = urlObj.pathname.split('/');
-      // The actual file path starts after 'o/'
       const filePathIndex = pathSegments.indexOf('o') + 1;
       if (filePathIndex > 0 && filePathIndex < pathSegments.length) {
-        // Decode URI components to handle special characters in file names
         return decodeURIComponent(pathSegments.slice(filePathIndex).join('/'));
       }
     } catch (e) {
@@ -125,223 +139,141 @@ const CarListing = ({ navigation }) => {
     return null;
   };
 
-  const handleSubmit = async () => {
-    if (!user_id) {
-      Alert.alert("Authentication Error", "User not logged in. Please log in to list or update a car.");
-      return;
-    }
+const handleSubmit = async () => {
+  if (!user_id) {
+    Alert.alert("Authentication Error", "User not logged in. Please log in to list or update a car.");
+    return;
+  }
 
-    const { car_id, carMaker, carModel, carYear, carSeats, carColor, carImage, licensePlate } = carDetails;
+  const { car_id, carMaker, carModel, carYear, carSeats, carColor, carImage, licensePlate } = carDetails;
 
-    console.log("handleSubmit: carDetails.car_id before API call:", car_id); // Debug log
-    console.log("handleSubmit: editingCar object:", editingCar); // Debug log
+  console.log("handleSubmit: carDetails.car_id before API call:", car_id); // Debug log
 
-    // Validate all fields
-    const missingFields = [];
-    if (!carMaker) missingFields.push('Car Maker');
-    if (!carModel) missingFields.push('Car Model');
-    if (!carYear) missingFields.push('Year');
-    if (!carSeats) missingFields.push('Number of Seats');
-    if (!carColor) missingFields.push('Color');
-    if (!licensePlate) missingFields.push('License Plate');
-    if (!carImage) missingFields.push('Car Image');
+  // Validate all fields
+  const missingFields = [];
+  if (!carMaker) missingFields.push('Car Maker');
+  if (!carModel) missingFields.push('Car Model');
+  if (!carYear) missingFields.push('Year');
+  if (!carSeats) missingFields.push('Number of Seats');
+  if (!carColor) missingFields.push('Color');
+  if (!licensePlate) missingFields.push('License Plate');
+  if (!carImage) missingFields.push('Car Image');
 
-    if (missingFields.length > 0) {
-      Alert.alert(
-        "Missing Information",
-        `Please provide the following details:\n${missingFields.join('\n')}`,
-        [{ text: "OK" }]
-      );
-      return;
-    }
+  if (missingFields.length > 0) {
+    Alert.alert(
+      "Missing Information",
+      `Please provide the following details:\n${missingFields.join('\n')}`,
+      [{ text: "OK" }]
+    );
+    return;
+  }
 
-    setIsSubmitting(true);
-    let imageUrlToSave = carImage?.uri; // Default to existing URI or local URI
+  setIsSubmitting(true);
+  let imageUrlToSave = carImage?.uri;
 
-    try {
-      // Check if a new image was selected (local URI) AND if we are editing an existing car
-      if (carImage && carImage.uri && !carImage.uri.startsWith('http')) {
-        // If editing and there was an old image, delete it first
-        if (editingCar && editingCar.car_image) {
-          const oldImagePath = getFirebaseStoragePath(editingCar.car_image);
-          if (oldImagePath) {
-            try {
-              const oldImageRef = ref(storage, oldImagePath);
-              await deleteObject(oldImageRef);
-              console.log("Old image deleted from Firebase Storage:", oldImagePath);
-            } catch (deleteError) {
-              console.warn("Failed to delete old image from Firebase Storage:", deleteError);
-              // Continue with upload even if old image deletion fails
-            }
+  try {
+    // Check if a new image was selected (local URI) AND if we are updating an existing car
+    if (carImage && carImage.uri && !carImage.uri.startsWith('http') && car_id) {
+      // If updating and there was an old image, delete it first
+      if (templateCar && templateCar.car_image) {
+        const oldImagePath = getFirebaseStoragePath(templateCar.car_image);
+        if (oldImagePath) {
+          try {
+            const oldImageRef = ref(storage, oldImagePath);
+            await deleteObject(oldImageRef);
+            console.log("Old image deleted from Firebase Storage:", oldImagePath);
+          } catch (deleteError) {
+            console.warn("Failed to delete old image from Firebase Storage:", deleteError);
+            // Continue with upload even if old image deletion fails
           }
         }
-
-        // Upload the new image
-        const response = await fetch(carImage.uri);
-        const blob = await response.blob();
-        const imageFileName = carImage.fileName || `car_image_${Date.now()}.jpg`;
-        const storageRef = ref(storage, `car_images/${user_id}/${imageFileName}`);
-        const uploadTask = uploadBytesResumable(storageRef, blob);
-
-        await new Promise((resolve, reject) => {
-          uploadTask.on(
-            "state_changed",
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log(`Upload is ${progress}% done`);
-            },
-            (error) => {
-              console.error("Image upload error:", error);
-              reject(error);
-            },
-            async () => {
-              imageUrlToSave = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve();
-            }
-          );
-        });
       }
 
-      const payload = {
-        userId: user_id,
-        car_make: carMaker,
-        car_model: carModel,
-        car_year: parseInt(carYear, 10), // ✅ convert to number
-        number_of_seats: parseInt(carSeats, 10), // ✅ convert to number
-        car_colour: carColor,
-        license_plate: licensePlate,
-        car_image: imageUrlToSave || '',
-      };
+      // Upload the new image
+      const response = await fetch(carImage.uri);
+      const blob = await response.blob();
+      const imageFileName = carImage.fileName || `car_image_${Date.now()}.jpg`;
+      const storageRef = ref(storage, `car_images/${user_id}/${imageFileName}`);
+      const uploadTask = uploadBytesResumable(storageRef, blob);
 
-
-      const endpoint = car_id ? `${api}car_listing/${car_id}` : `${api}car_listing`;
-      const method = car_id ? 'PUT' : 'POST';
-
-      const response = await fetch(endpoint, {
-        method,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      console.log("API Response Status:", response.status); // Debug log for response status
-      // Read the response body once
-      const responseText = await response.text();
-      let responseJson;
-      let errorMessage = "An unknown error occurred.";
-
-      try {
-        responseJson = JSON.parse(responseText);
-        if (responseJson.error) {
-          errorMessage = responseJson.error;
-        } else if (!response.ok) {
-          errorMessage = `Server responded with status ${response.status}`;
-        }
-      } catch (jsonError) {
-        console.error("JSON parsing error:", jsonError);
-        console.error("Raw server response:", responseText);
-        errorMessage = `Failed to parse server response. Raw response: ${responseText.substring(0, 100)}...`;
-      }
-
-      if (response.ok) {
-        Alert.alert(
-          "Success",
-          car_id ? "Your car details have been updated successfully!" : "Your car has been listed successfully!",
-          [{ text: "OK", onPress: () => navigation.goBack() }]
-        );
-      } else {
-        Alert.alert("Error", errorMessage);
-      }
-    } catch (error) {
-      console.error("Submission error:", error);
-      Alert.alert("Error", "Failed to submit car details. Please check your connection or try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteCar = () => {
-    if (!user_id || !editingCar?.id) { // <--- CHANGED THIS LINE: Use editingCar.id
-      Alert.alert("Error", "Cannot delete car. Missing user or car ID.");
-      return;
-    }
-
-    Alert.alert(
-      "Confirm Deletion",
-      "Are you sure you want to delete this car listing? This action cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Delete",
-          onPress: async () => {
-            setIsSubmitting(true);
-            try {
-              // 1. Delete image from Firebase Storage
-              if (editingCar.car_image) {
-                const imagePath = getFirebaseStoragePath(editingCar.car_image);
-                if (imagePath) {
-                  try {
-                    const imageRef = ref(storage, imagePath);
-                    await deleteObject(imageRef);
-                    console.log("Image deleted from Firebase Storage:", imagePath);
-                  } catch (deleteError) {
-                    console.warn("Failed to delete image from Firebase Storage:", deleteError);
-                    // Continue with database deletion even if image deletion fails
-                  }
-                }
-              }
-
-              // 2. Delete car details from the database
-              const response = await fetch(`${api}car_listing/${editingCar.id}`, { // <--- CHANGED THIS LINE: Use editingCar.id
-                method: 'DELETE',
-                headers: {
-                  'Accept': 'application/json',
-                },
-              });
-
-              // Read the response body once
-              const responseText = await response.text();
-              let responseJson;
-              let errorMessage = "An unknown error occurred during deletion.";
-
-              try {
-                responseJson = JSON.parse(responseText);
-                if (responseJson.error) {
-                  errorMessage = responseJson.error;
-                } else if (!response.ok) {
-                  errorMessage = `Server responded with status ${response.status}`;
-                }
-              } catch (jsonError) {
-                console.error("JSON parsing error during deletion:", jsonError);
-                console.error("Raw server response during deletion:", responseText);
-                errorMessage = `Failed to parse server response during deletion. Raw response: ${responseText.substring(0, 100)}...`;
-              }
-
-              if (response.ok) {
-                Alert.alert(
-                  "Success",
-                  "Car listing deleted successfully!",
-                  [{ text: "OK", onPress: () => navigation.goBack() }]
-                );
-              } else {
-                Alert.alert("Error", errorMessage);
-              }
-            } catch (error) {
-              console.error("Deletion error:", error);
-              Alert.alert("Error", "Failed to delete car. Please check your connection or try again.");
-            } finally {
-              setIsSubmitting(false);
-            }
+      await new Promise((resolve, reject) => {
+        uploadTask.on(
+          "state_changed",
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            console.log(`Upload is ${progress}% done`);
           },
-          style: "destructive"
-        }
-      ]
-    );
-  };
+          (error) => {
+            console.error("Image upload error:", error);
+            reject(error);
+          },
+          async () => {
+            imageUrlToSave = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve();
+          }
+        );
+      });
+    }
+
+    const payload = {
+      userId: user_id,
+      car_make: carMaker,
+      car_model: carModel,
+      car_year: parseInt(carYear, 10),
+      number_of_seats: parseInt(carSeats, 10),
+      car_colour: carColor,
+      license_plate: licensePlate,
+      car_image: imageUrlToSave || '',
+    };
+
+    // Determine if we're updating existing car or creating new one
+    const endpoint = car_id ? `${api}car_listing/${car_id}` : `${api}car_listing`;
+    const method = car_id ? 'PUT' : 'POST';
+
+    console.log(`Making ${method} request to: ${endpoint}`); // Debug log
+
+    const response = await fetch(endpoint, {
+      method,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await response.text();
+    let responseJson;
+    let errorMessage = "An unknown error occurred.";
+
+    try {
+      responseJson = JSON.parse(responseText);
+      if (responseJson.error) {
+        errorMessage = responseJson.error;
+      } else if (!response.ok) {
+        errorMessage = `Server responded with status ${response.status}`;
+      }
+    } catch (jsonError) {
+      console.error("JSON parsing error:", jsonError);
+      console.error("Raw server response:", responseText);
+      errorMessage = `Failed to parse server response. Raw response: ${responseText.substring(0, 100)}...`;
+    }
+
+    if (response.ok) {
+      Alert.alert(
+        "Success",
+        car_id ? "Your car details have been updated successfully!" : "Your car has been listed successfully!",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      );
+    } else {
+      Alert.alert("Error", errorMessage);
+    }
+  } catch (error) {
+    console.error("Submission error:", error);
+    Alert.alert("Error", "Failed to submit car details. Please check your connection or try again.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const inputFields = [
     {
@@ -393,9 +325,10 @@ const CarListing = ({ navigation }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
-  const headerTitle = editingCar ? "Edit Car Details" : "Upload Car Details";
-  const submitButtonText = editingCar ? "Update Car Details" : "List My Car";
-
+const isEditing = templateCar && templateCar.id;
+const headerTitle = isEditing ? "Edit Car Details" : "Upload Car Details";
+const submitButtonText = isEditing ? "Update Car Details" : "List My Car";
+ 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
@@ -420,9 +353,9 @@ const CarListing = ({ navigation }) => {
             <Text style={styles.introText}>
               Please provide accurate information about your car to help passengers identify it.
             </Text>
-            {editingCar && (
-              <Text style={styles.reviewMessage}>
-                Your changes will be reviewed by an nthome admin within 24 hours.
+            {isTemplateMode && (
+              <Text style={styles.templateMessage}>
+                Form pre-filled with your existing car data. Please update the details for your new car.
               </Text>
             )}
           </View>
@@ -442,7 +375,6 @@ const CarListing = ({ navigation }) => {
                     placeholder={field.placeholder}
                     placeholderTextColor="#adb5bd"
                     keyboardType={field.keyboardType || 'default'}
-                    editable={field.editable !== false} // Apply editable prop
                   />
                 </View>
               </View>
@@ -491,24 +423,6 @@ const CarListing = ({ navigation }) => {
               </>
             )}
           </TouchableOpacity>
-
-          {/* Delete Button (only visible when editing) */}
-          {editingCar && (
-            <TouchableOpacity
-              style={[styles.deleteButton, isSubmitting && styles.submitButtonDisabled]}
-              onPress={handleDeleteCar}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="trash-outline" size={20} color="#fff" style={styles.submitIcon} />
-                  <Text style={styles.submitButtonText}>Delete Car</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
@@ -569,9 +483,9 @@ const styles = StyleSheet.create({
     color: '#6c757d',
     lineHeight: 20,
   },
-  reviewMessage: {
+  templateMessage: {
     fontSize: 13,
-    color: '#0DCAF0',
+    color: '#28a745',
     marginTop: 10,
     fontStyle: 'italic',
     textAlign: 'center',
@@ -672,21 +586,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  deleteButton: {
-    backgroundColor: '#dc3545', // Red color for delete
-    borderRadius: 12,
-    paddingVertical: 16,
-    marginHorizontal: 16,
-    marginTop: 16, // Spacing from submit button
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
 });
 

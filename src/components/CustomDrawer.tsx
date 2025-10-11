@@ -49,28 +49,33 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
     if (!user_id) return // Ensure user_id is available before making the request
 
     const fetchCustomerRating = async () => {
-      try {
-        const res = await axios.get(`${api}/tripHistory/${user_id}`, {
-          params: {
-            driverId: user_id, // pass the driver's ID here
-          },
-        })
-        const trips = res.data
+     try {
+  const res = await axios.get(`${api}/tripHistory/${user_id}`, {
+    params: {
+      driverId: user_id, // pass the driver's ID here
+    },
+  });
 
-        // Filter out null ratings
-        const ratedTrips = trips.filter((trip) => trip.customer_rating !== null)
+  const trips = res.data;
 
-        if (ratedTrips.length > 0) {
-          const total = ratedTrips.reduce((sum, trip) => sum + Number.parseFloat(trip.customer_rating), 0)
-          const avg = total / ratedTrips.length
-          // console.log("Average customer Rating:", avg);
-          setRating(avg)
-        } else {
-          setRating(null)
-        }
-      } catch (err) {
-        console.log("Error fetching customer rating:", err)
-      }
+  // Filter out null, undefined, or 0 ratings
+  const ratedTrips = trips.filter(
+    (trip) => trip.driver_ratings !== null && Number(trip.driver_ratings) > 0
+  );
+
+  if (ratedTrips.length > 0) {
+    const total = ratedTrips.reduce(
+      (sum, trip) => sum + Number.parseFloat(trip.driver_ratings),
+      0
+    );
+    const avg = total / ratedTrips.length;
+    setRating(avg.toFixed(1)); // optional: round to 1 decimal
+  } else {
+    setRating(0); // match SQL’s "0" default
+  }
+} catch (err) {
+  console.log("Error fetching customer rating:", err);
+}
     }
 
     fetchCustomerRating()

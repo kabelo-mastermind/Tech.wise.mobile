@@ -312,7 +312,13 @@ const SubscriptionPage = ({ navigation, route }) => {
               </View>
             </View>
 
-            {(!customerId || (subscription && (subscription.status === "canceled" || status === "non-renewing"))) && (
+           {(
+    !subscription ||
+    subscription?.length === 0 ||
+    !customerId ||
+    subscription?.status === "canceled" ||
+    status === "non-renewing"
+  )  && (
               <TouchableOpacity
                 style={styles.subscribeButton}
                 onPress={() => handleSubscribe("Weekly", 400)}
@@ -364,7 +370,13 @@ const SubscriptionPage = ({ navigation, route }) => {
               </View>
             </View>
 
-            {(!customerId || (subscription && (subscription.status === "canceled" || status === "non-renewing"))) && (
+            {(
+    !subscription ||
+    subscription?.length === 0 ||
+    !customerId ||
+    subscription?.status === "canceled" ||
+    status === "non-renewing"
+  )  && (
               <TouchableOpacity
                 style={[styles.subscribeButton, styles.featuredSubscribeButton]}
                 onPress={() => handleSubscribe("Monthly", 1500)}
@@ -422,6 +434,7 @@ const SubscriptionPage = ({ navigation, route }) => {
     </SafeAreaView>
   )
 }
+export default SubscriptionPage
 
 const styles = StyleSheet.create({
   container: {
@@ -611,4 +624,3 @@ const styles = StyleSheet.create({
   },
 })
 
-export default SubscriptionPage
