@@ -23,7 +23,7 @@ LogBox.ignoreLogs([
 export default function App() {
   return (
     <Provider store={store}> {/* Wrap the app with Redux provider */}
-      <PersistGate loading={null} persistor={persistor}> {/* Wrap the app with PersistGate to wait for state rehydration */}
+      <PersistGate loading={null} persistor={persistor} timeout={10000}> {/* Wrap the app with PersistGate to wait for state rehydration */}
         <GestureHandlerRootView style={styles.container}>
           {/* Network Banner */}
           <NetworkBanner />

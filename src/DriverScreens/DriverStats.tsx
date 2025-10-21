@@ -316,27 +316,40 @@ const DriverStats = ({ navigation, route }) => {
 
   const [loadingStats, setLoadingStats] = useState(true)
   const [errorStats, setErrorStats] = useState(null)
-
+const MAX_RETRIES = 3; // Limit retry attempts
   // Fetch driver stats from the API and update them on dashboard
   useEffect(() => {
     let retryTimeout: NodeJS.Timeout | undefined
 
-    const fetchDriverStats = async () => {
-      if (!user_id || user_id === "") {
-        showAlert({
-          title: "Error",
-          message: "Cannot fetch stats because your account is not recognized. Please log in again.",
-          type: "error",
-        });
-        return;
-      }
+    let retryCount = 0;
+
+  const axiosWithTimeout = async (url: string, timeout = 5000) => {
+    return Promise.race([
+      axios.get(url),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Request timed out")), timeout)
+      ),
+    ]);
+  };
+
+  const fetchDriverStats = async () => {
+    if (!user_id || user_id === "") {
+      showAlert({
+        title: "Error",
+        message:
+          "Cannot fetch stats because your account is not recognized. Please log in again.",
+        type: "error",
+      });
+      setLoadingStats(false);
+      return;
+    }
 
 
       setLoadingStats(true)
       setErrorStats(null)
 
       try {
-        const res = await axios.get(`${api}driver/stats/${user_id}`)
+        const res = await axiosWithTimeout(`${api}driver/stats/${user_id}`)
         const data = res.data
         const today = new Date()
 
@@ -369,7 +382,7 @@ const DriverStats = ({ navigation, route }) => {
               .filter((t) => t.payment_status === "paid")
               .map(async (trip) => {
                 try {
-                  const res = await axios.get(`${api}payment/${trip.tripId}`)
+                  const res = await axiosWithTimeout(`${api}payment/${trip.tripId}`)
                   earnings += Number.parseFloat(res.data.amount || 0)
                 } catch (err) {
                   console.warn(`Failed to fetch payment for trip ${trip.tripId}`, err)
@@ -445,8 +458,13 @@ const DriverStats = ({ navigation, route }) => {
 
         setLoadingStats(false);
 
+
+
         // Retry after 3 seconds
+         if (retryCount < MAX_RETRIES) {
+        retryCount++;
         retryTimeout = setTimeout(fetchDriverStats, 3000);
+      }
       }
 
     }
@@ -814,7 +832,7 @@ const DriverStats = ({ navigation, route }) => {
     )
   }
 
-  if (!fontsLoaded || loadingStats) {
+  if (loadingStats) {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.logoWrapper}>
@@ -829,7 +847,7 @@ const DriverStats = ({ navigation, route }) => {
           />
         </View>
         <Text style={styles.loadingText_slogan}>{"Nthome ka petjana!"}</Text>
-        <Text style={styles.loadingText}>{errorStats || "Loading stats..."}</Text>
+        <Text style={styles.loadingText}>{errorStats || "Loading please wait..."}</Text>
       </View>
 
 

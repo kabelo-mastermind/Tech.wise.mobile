@@ -7,6 +7,7 @@ import rootReducer from './reducers'; // Import your root reducer
 const persistConfig: PersistConfig<ReturnType<typeof rootReducer>> = {
   key: 'root',
   storage: AsyncStorage,
+  timeout: false, // or remove entirely
 };
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);

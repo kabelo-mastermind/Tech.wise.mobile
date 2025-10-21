@@ -69,7 +69,7 @@ const SignUpScreen = ({ navigation }) => {
       await axios.post(api + "register", {
         name,
         email,
-        password,
+        // password,
         role: "driver",
         user_uid: response.user.uid,
       });

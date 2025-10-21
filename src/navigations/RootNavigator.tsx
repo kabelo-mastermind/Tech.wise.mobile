@@ -61,6 +61,7 @@ import BookingEdit from "../NthomeAir/BookingEdit";
 import BookingDetails from "../NthomeAir/BookingDetails";
 import FlightWelcomeScreen from "../NthomeAir/FlightWelcomeScreen";
 import TermsScreen from "../DriverScreens/TermsScreen";
+import { ActivityIndicator, View } from "react-native";
 
 
 const Stack = createNativeStackNavigator(); // Renaming to `Stack` for better clarity
@@ -329,11 +330,15 @@ export default function RootNavigator() {
   useEffect(() => {
     const loadInitialRoute = async () => {
       try {
-        // Check if a last screen is saved
-        const savedScreen = await AsyncStorage.getItem('lastScreen');
-        console.log('Initial route:', initialRoute)
+        // 1️⃣ Check if a last screen is saved
+        const savedScreen = await AsyncStorage.getItem("lastScreen");
         if (savedScreen) {
-          setInitialRoute(savedScreen);
+          if (savedScreen === "PendingRequests") {
+            setInitialRoute("PendingRequests");
+          } else {
+            setInitialRoute("DriverStats");
+          }
+          await AsyncStorage.removeItem("lastScreen");
           setIsLoading(false);
           return;
         }
@@ -343,46 +348,78 @@ export default function RootNavigator() {
         const storedUserId = await AsyncStorage.getItem('userId');
         const emailVerified = await AsyncStorage.getItem('emailVerified');
 
-        if (storedUserId && emailVerified === 'true') {
-          setInitialRoute('DrawerNavigator');
+        // If we have stored user but need to verify email status
+        if (storedUserId) {
+          const user = auth.currentUser;
+          if (user) {
+            await user.reload(); // Get latest email verification status
+            if (user.emailVerified) {
+              await AsyncStorage.setItem("emailVerified", "true");
+              setInitialRoute("DrawerNavigator");
+            } else {
+              await AsyncStorage.removeItem("emailVerified");
+              await AsyncStorage.removeItem("userId");
+              setInitialRoute("ProtectedScreen");
+            }
+          } else {
+            // User not logged in but has stored data - clear it
+            await AsyncStorage.removeItem("userId");
+            await AsyncStorage.removeItem("emailVerified");
+            setInitialRoute(hasOnboarded === "true" ? "LoginScreen" : "Onboarding");
+          }
         } else {
           const user = auth.currentUser;
           if (user) {
             await user.reload();
             if (user.emailVerified) {
-              await AsyncStorage.setItem('userId', user.uid);
-              await AsyncStorage.setItem('emailVerified', 'true');
-              setInitialRoute('DrawerNavigator');
+              await AsyncStorage.setItem("userId", user.uid);
+              await AsyncStorage.setItem("emailVerified", "true");
+              setInitialRoute("DrawerNavigator");
             } else {
-              setInitialRoute('ProtectedScreen');
+              setInitialRoute("ProtectedScreen");
             }
           } else {
-            setInitialRoute(hasOnboarded === 'true' ? 'LoginScreen' : 'Onboarding');
+            setInitialRoute(hasOnboarded === "true" ? "LoginScreen" : "Onboarding");
           }
         }
       } catch (error) {
-        console.error('Error checking authentication status:', error);
-        setInitialRoute('LoginScreen');
+        console.error("Error checking authentication status:", error);
+        setInitialRoute("LoginScreen");
       } finally {
         setIsLoading(false);
       }
     };
 
+
     loadInitialRoute();
 
+     // 3️⃣ Subscribe to real-time auth changes WITH email verification check
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
+      if (!user) {
+        console.log("User is not logged in");
+        // Clear stored data when user signs out
+        await AsyncStorage.removeItem("userId");
+        await AsyncStorage.removeItem("emailVerified");
+        setInitialRoute("LoginScreen");
+        return;
+      }
+
+      try {
+        // Reload user to get latest email verification status
         await user.reload();
-        if (user.emailVerified) {
-          await AsyncStorage.setItem('userId', user.uid);
-          await AsyncStorage.setItem('emailVerified', 'true');
-          setInitialRoute('DrawerNavigator');
+        const currentUser = auth.currentUser;
+        
+        if (currentUser && currentUser.emailVerified) {
+          await AsyncStorage.setItem("userId", currentUser.uid);
+          await AsyncStorage.setItem("emailVerified", "true");
+          setInitialRoute("DrawerNavigator");
         } else {
-          setInitialRoute('ProtectedScreen');
+          await AsyncStorage.removeItem("emailVerified");
+          setInitialRoute("ProtectedScreen");
         }
-      } else {
-        console.log('User is not logged in');
-        setInitialRoute('LoginScreen');
+      } catch (err) {
+        console.error("Error reading email verification status:", err);
+        setInitialRoute("LoginScreen");
       }
     });
 
@@ -390,8 +427,12 @@ export default function RootNavigator() {
   }, []);
 
 
-  if (isLoading || !initialRoute) {
-    return null; // Avoid rendering the navigator until the initial route is set
+  if (isLoading || initialRoute === null) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#0DCAF0" />
+      </View>
+    );
   }
 
   return (

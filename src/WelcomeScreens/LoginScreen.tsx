@@ -40,16 +40,26 @@ const LoginScreen = ({ navigation }) => {
   const [userId, setUserId] = useState(null);
   const [userAuth, setUserAuth] = useState(null);
 
-  // Check if user is already signed in
+  // Check if user is already signed in - UPDATED VERSION
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        dispatch(setUser({
-          name: user.displayName,
-          email: user.email,
-          id: user.uid,
-        }));
-        navigation.replace('DrawerNavigator');
+        // Reload user to get latest email verification status
+        await user.reload();
+        const currentUser = auth.currentUser;
+
+        if (currentUser.emailVerified) {
+          dispatch(setUser({
+            name: user.displayName,
+            email: user.email,
+            id: user.uid,
+          }));
+          navigation.replace('DrawerNavigator');
+        } else {
+          // User is logged in but email not verified - send to verification screen
+          setLoading(false);
+          navigation.replace('ProtectedScreen');
+        }
       } else {
         setLoading(false);
       }

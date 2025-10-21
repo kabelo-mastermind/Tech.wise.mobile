@@ -27,53 +27,53 @@ const SubscriptionPage = ({ navigation, route }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
-    // AwesomeAlert state
-    const [alertVisible, setAlertVisible] = useState(false)
-    const [alertTitle, setAlertTitle] = useState("")
-    const [alertMessage, setAlertMessage] = useState("")
-    const [alertType, setAlertType] = useState("info") // 'info', 'success', 'error'
-    const [alertConfirmCallback, setAlertConfirmCallback] = useState<(() => void) | null>(null)
-    const [alertCancelCallback, setAlertCancelCallback] = useState<(() => void) | null>(null)
-    const [alertShowCancelButton, setAlertShowCancelButton] = useState(false)
-    const [alertConfirmText, setAlertConfirmText] = useState("OK")
-    const [alertCancelText, setAlertCancelText] = useState("Cancel")
-  
-    const showAlert = ({
-      title = "",
-      message = "",
-      type = "info",
-      onConfirm = null as (() => void) | null | undefined,
-      onCancel = null as (() => void) | null | undefined,
-      showCancelButton = false,
-      confirmText = "OK",
-      cancelText = "Cancel",
-    }) => {
-      setAlertTitle(title)
-      setAlertMessage(message)
-      setAlertType(type)
-      setAlertConfirmCallback(() => onConfirm)
-      setAlertCancelCallback(() => onCancel)
-      setAlertShowCancelButton(showCancelButton)
-      setAlertConfirmText(confirmText)
-      setAlertCancelText(cancelText)
-      setAlertVisible(true)
-    }
-  
-    const hideAlert = () => {
-      setAlertVisible(false)
-    }
-  
+  // AwesomeAlert state
+  const [alertVisible, setAlertVisible] = useState(false)
+  const [alertTitle, setAlertTitle] = useState("")
+  const [alertMessage, setAlertMessage] = useState("")
+  const [alertType, setAlertType] = useState("info") // 'info', 'success', 'error'
+  const [alertConfirmCallback, setAlertConfirmCallback] = useState<(() => void) | null>(null)
+  const [alertCancelCallback, setAlertCancelCallback] = useState<(() => void) | null>(null)
+  const [alertShowCancelButton, setAlertShowCancelButton] = useState(false)
+  const [alertConfirmText, setAlertConfirmText] = useState("OK")
+  const [alertCancelText, setAlertCancelText] = useState("Cancel")
+
+  const showAlert = ({
+    title = "",
+    message = "",
+    type = "info",
+    onConfirm = null as (() => void) | null | undefined,
+    onCancel = null as (() => void) | null | undefined,
+    showCancelButton = false,
+    confirmText = "OK",
+    cancelText = "Cancel",
+  }) => {
+    setAlertTitle(title)
+    setAlertMessage(message)
+    setAlertType(type)
+    setAlertConfirmCallback(() => onConfirm)
+    setAlertCancelCallback(() => onCancel)
+    setAlertShowCancelButton(showCancelButton)
+    setAlertConfirmText(confirmText)
+    setAlertCancelText(cancelText)
+    setAlertVisible(true)
+  }
+
+  const hideAlert = () => {
+    setAlertVisible(false)
+  }
+
 
   useEffect(() => {
-    if (route.params?.status) {  
+    if (route.params?.status) {
       setStatus(route.params.status)
       console.log("Updated status from route params:", route.params.status)
-    }else{
-      const  newstatus=status;
+    } else {
+      const newstatus = status;
       setStatus(newstatus)
-      console.log("Updated status from newstatus:", newstatus)  
+      console.log("Updated status from newstatus:", newstatus)
     }
-     
+
   }, [route.params?.status])
 
   // fetch customer ID and subscriptions when the component mounts
@@ -227,10 +227,10 @@ const SubscriptionPage = ({ navigation, route }) => {
           } else if (navState.url.includes("payment-error")) {
             setAuthorizationUrl(null)
             showAlert({
-        title: "Error",
-        message: "Payment failed or was canceled. Please try again.",
-        type: "error",
-      })
+              title: "Error",
+              message: "Payment failed or was canceled. Please try again.",
+              type: "error",
+            })
           }
         }}
       />
@@ -312,13 +312,7 @@ const SubscriptionPage = ({ navigation, route }) => {
               </View>
             </View>
 
-           {(
-    !subscription ||
-    subscription?.length === 0 ||
-    !customerId ||
-    subscription?.status === "canceled" ||
-    status === "non-renewing"
-  )  && (
+            {(!customerId || (subscription && (subscription.status === "canceled" || status === "non-renewing"))) && (
               <TouchableOpacity
                 style={styles.subscribeButton}
                 onPress={() => handleSubscribe("Weekly", 400)}
@@ -371,24 +365,24 @@ const SubscriptionPage = ({ navigation, route }) => {
             </View>
 
             {(
-    !subscription ||
-    subscription?.length === 0 ||
-    !customerId ||
-    subscription?.status === "canceled" ||
-    status === "non-renewing"
-  )  && (
-              <TouchableOpacity
-                style={[styles.subscribeButton, styles.featuredSubscribeButton]}
-                onPress={() => handleSubscribe("Monthly", 1500)}
-                disabled={isProcessing}
-              >
-                {isProcessing && selectedPlanType === "Monthly" ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.buttonText}>Subscribe Now</Text>
-                )}
-              </TouchableOpacity>
-            )}
+              !subscription ||
+              subscription?.length === 0 ||
+              !customerId ||
+              subscription?.status === "canceled" ||
+              status === "non-renewing"
+            ) && (
+                <TouchableOpacity
+                  style={[styles.subscribeButton, styles.featuredSubscribeButton]}
+                  onPress={() => handleSubscribe("Monthly", 1500)}
+                  disabled={isProcessing}
+                >
+                  {isProcessing && selectedPlanType === "Monthly" ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.buttonText}>Subscribe Now</Text>
+                  )}
+                </TouchableOpacity>
+              )}
           </View>
         </View>
 
@@ -409,32 +403,31 @@ const SubscriptionPage = ({ navigation, route }) => {
 
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
 
-       {/* Awesome Alert */}
-            <AwesomeAlert
-              show={alertVisible}
-              showProgress={false}
-              title={alertTitle}
-              message={alertMessage}
-              closeOnTouchOutside={false}
-              closeOnHardwareBackPress={false}
-              showCancelButton={alertShowCancelButton}
-              showConfirmButton={true}
-              cancelText={alertCancelText}
-              confirmText={alertConfirmText}
-              confirmButtonColor={alertType === "error" ? "#DD6B55" : "#0DCAF0"}
-              onCancelPressed={() => {
-                hideAlert()
-                alertCancelCallback && alertCancelCallback()
-              }}
-              onConfirmPressed={() => {
-                hideAlert()
-                alertConfirmCallback && alertConfirmCallback()
-              }}
-            />
+      {/* Awesome Alert */}
+      <AwesomeAlert
+        show={alertVisible}
+        showProgress={false}
+        title={alertTitle}
+        message={alertMessage}
+        closeOnTouchOutside={false}
+        closeOnHardwareBackPress={false}
+        showCancelButton={alertShowCancelButton}
+        showConfirmButton={true}
+        cancelText={alertCancelText}
+        confirmText={alertConfirmText}
+        confirmButtonColor={alertType === "error" ? "#DD6B55" : "#0DCAF0"}
+        onCancelPressed={() => {
+          hideAlert()
+          alertCancelCallback && alertCancelCallback()
+        }}
+        onConfirmPressed={() => {
+          hideAlert()
+          alertConfirmCallback && alertConfirmCallback()
+        }}
+      />
     </SafeAreaView>
   )
 }
-export default SubscriptionPage
 
 const styles = StyleSheet.create({
   container: {
@@ -624,3 +617,4 @@ const styles = StyleSheet.create({
   },
 })
 
+export default SubscriptionPage

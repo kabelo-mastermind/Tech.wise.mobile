@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { StyleSheet, View, Dimensions, TouchableOpacity,BackHandler, Text, Animated, Linking, Alert } from "react-native"
+import { StyleSheet, View, Dimensions, TouchableOpacity, BackHandler, Text, Animated, Linking, Alert } from "react-native"
 import { Icon } from "react-native-elements"
 import { colors } from "../global/styles"
 import MapComponent from "../components/MapComponent"
 import * as Location from "expo-location"
+import * as TaskManager from 'expo-task-manager';
 import { SafeAreaView } from "react-native-safe-area-context"
 import { db } from "../../FirebaseConfig"
 import { collection, query, where, onSnapshot, doc, setDoc } from "firebase/firestore"
@@ -34,6 +35,8 @@ import TripRequestModal from "../DriverComponents/Modals/TripRequestModal"
 
 const SCREEN_HEIGHT = Dimensions.get("window").height
 const SCREEN_WIDTH = Dimensions.get("window").width
+const BUTTON_WIDTH = 140; // optional for consistency
+
 // Define theme colors
 const THEME = {
   background: "#121212",
@@ -44,15 +47,111 @@ const THEME = {
     secondary: "#AAAAAA",
   },
 }
+const BACKGROUND_LOCATION_TASK = 'background-location-task';
+
+
 export default function PendingRequests({ navigation, route }) {
   const dispatch = useDispatch() // Redux dispatch function
   const user = useSelector((state) => state.auth.user)
   const user_id = user?.user_id || null
   const [tripStarted, setTripStarted] = useState(false)
-  const selectedRequest = useSelector((state) => state.trip.selectedRequest) 
+  const selectedRequest = useSelector((state) => state.trip.selectedRequest)
   const session_id = selectedRequest?.session_id;
   const [modalVisible, setModalVisible] = useState(false);
+  const [isBackgroundTrackingActive, setIsBackgroundTrackingActive] = useState(false);
 
+  // Define the background location task INSIDE the component
+  useEffect(() => {
+    TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
+      if (error) {
+        console.error('Background location task error:', error);
+        return;
+      }
+
+      if (data) {
+        const { locations } = data;
+        const location = locations[0];
+
+        if (location && user_id) { // Check if user_id is available
+          const { latitude, longitude } = location.coords;
+
+          // Update driver location in state
+          setDriverLocation({ latitude, longitude });
+
+          // Save to Firebase
+          try {
+            const driverLocationRef = doc(db, "driver_locations", user_id.toString());
+            await setDoc(
+              driverLocationRef,
+              {
+                userId: user_id,
+                latitude,
+                longitude,
+                timestamp: new Date().toISOString(),
+                background: true,
+              },
+              { merge: true },
+            );
+            console.log('Background location saved successfully!');
+          } catch (error) {
+            console.log("Error saving background driver location:", error);
+          }
+        }
+      }
+    });
+  }, [user_id]); // Add user_id as dependency
+
+  const startBackgroundLocationTracking = async () => {
+    try {
+      // Request background permissions
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+
+      if (status === 'granted') {
+        await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 5000,
+          distanceInterval: 10,
+          showsBackgroundLocationIndicator: true,
+          foregroundService: {
+            notificationTitle: 'Trip in progress',
+            notificationBody: 'Tracking your location in the background',
+            notificationColor: '#00D8F0',
+          },
+        });
+
+        setIsBackgroundTrackingActive(true);
+        console.log('Background location tracking started');
+      } else {
+        console.warn('Background location permission not granted');
+        Alert.alert(
+          'Permission Required',
+          'Background location permission is required to track your trip when the app is in the background.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error starting background location tracking:', error);
+    }
+  };
+
+  const stopBackgroundLocationTracking = async () => {
+    try {
+      let hasStarted = false;
+      try {
+        hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      } catch (error) {
+        console.log('Could not check if location updates started:', error);
+      }
+
+      if (hasStarted) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      }
+      setIsBackgroundTrackingActive(false);
+      console.log('Background location tracking stopped');
+    } catch (error) {
+      console.error('Error stopping background location tracking:', error);
+    }
+  };
   // console.log("Selected Request from Redux in ---------------------------------:", selectedRequest)
   // const openDrawer = route.params?.openDrawer
   // const state = route.params?.newState
@@ -64,7 +163,7 @@ export default function PendingRequests({ navigation, route }) {
   //from TrpRequestModal
   const tripData = selectedRequest
   // console.log("Trip Data from Redux in PendingRequests:", tripData?.customerId);
-  
+
   useEffect(() => {
     if (tripData) {
       console.log("✅ tripId:", tripData.id) // 'id' is tripId
@@ -77,7 +176,7 @@ export default function PendingRequests({ navigation, route }) {
   // console.log("Received tripData from route params:", tripData)
 
   const [tripRequestSocket, setTripRequest] = useState(selectedRequest)
-  // console.log("Trip Request from Redux in PendingRequests:", tripRequestSocket)
+  console.log("Trip Request from Redux in PendingRequests:", tripRequestSocket)
   // const tripRequestSocket = useSelector((state) => state.trip.tripData)
 
   const [eta, setEta] = useState("N/A")
@@ -237,18 +336,18 @@ export default function PendingRequests({ navigation, route }) {
       console.error("Failed to update driver status:", error.response?.data || error.message);
     }
   };
- useEffect(() => {
-   const onBackPress = () => {
-     handleGoOffline();
-     return true; // Prevent default back navigation
-   };
+  useEffect(() => {
+    const onBackPress = () => {
+      handleGoOffline();
+      return true; // Prevent default back navigation
+    };
 
-   const backHandler = BackHandler.addEventListener(
-     "hardwareBackPress",
-     onBackPress
-   );
-   return () => backHandler.remove();
- }, [handleGoOffline]);
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+    return () => backHandler.remove();
+  }, [handleGoOffline]);
   // Extracting user origin and destination from tripData
   useEffect(() => {
     if (selectedRequest) {
@@ -344,49 +443,65 @@ export default function PendingRequests({ navigation, route }) {
     longitude: 0,
   })
   //driver location
+  // Update the driver location useEffect
   useEffect(() => {
-    ; (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync()
-      if (status !== "granted") {
-        console.error("Permission to access location was denied")
-        return
+    let watchId;
+
+    (async () => {
+      // Only track foreground location if background tracking is not active
+      if (!isBackgroundTrackingActive) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          console.error("Permission to access location was denied");
+          return;
+        }
+
+        watchId = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 5000,
+            distanceInterval: 1,
+          },
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            setDriverLocation({ latitude, longitude });
+
+            try {
+              const driverLocationRef = doc(db, "driver_locations", user_id.toString());
+              await setDoc(
+                driverLocationRef,
+                {
+                  userId: user_id,
+                  latitude,
+                  longitude,
+                  timestamp: new Date().toISOString(),
+                  background: false, // Mark as foreground location
+                },
+                { merge: true },
+              );
+            } catch (error) {
+              console.log("Error saving driver location:", error);
+            }
+          },
+        );
       }
+    })();
 
-      const watchId = Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 1,
-        },
-        async (position) => {
-          const { latitude, longitude } = position.coords
-          setDriverLocation({ latitude, longitude })
-
-          try {
-            const driverLocationRef = doc(db, "driver_locations", user_id.toString())
-            await setDoc(
-              driverLocationRef,
-              {
-                userId: user_id,
-                latitude,
-                longitude,
-                timestamp: new Date().toISOString(),
-              },
-              { merge: true },
-            )
-
-            // console.log('Driver location saved successfully!');
-          } catch (error) {
-            console.log("Error saving driver location:", error)
-          }
-        },
-      )
-
-      return () => {
-        watchId.remove()
+    return () => {
+      if (watchId) {
+        watchId.remove();
       }
-    })()
-  }, [user_id])
+    };
+  }, [user_id, isBackgroundTrackingActive]); // Add isBackgroundTrackingActive as dependency
+
+  // Clean up background tracking on component unmount
+  useEffect(() => {
+    return () => {
+      if (isBackgroundTrackingActive) {
+        stopBackgroundLocationTracking();
+      }
+    };
+  }, [isBackgroundTrackingActive]);
 
   // Haversine formula for distance calculation
   const haversineDistance = (lat1, lon1, lat2, lon2) => {
@@ -509,6 +624,11 @@ export default function PendingRequests({ navigation, route }) {
 
       if (response.ok) {
         console.log("Trip successfully canceled.")
+        // Stop background tracking if it was active
+        if (isBackgroundTrackingActive) {
+          await stopBackgroundLocationTracking();
+        }
+
         setUserOrigin({ latitude: null, longitude: null })
         setUserDestination({ latitude: null, longitude: null })
         emitCancelTrip(tripId, selectedRequest.customerId)
@@ -645,9 +765,9 @@ export default function PendingRequests({ navigation, route }) {
       }
 
       // Check if driver is within 5 m of pickup location
-      const distanceInMetersRandom = 500
+      const distanceInMetersRandom = 250
       if (distanceToPickupInMeters <= distanceInMetersRandom) {
-        console.log("Driver is within 5km of pickup location")
+        console.log("Driver is within 5m of pickup location")
         setShowStartButton(true)
         emitArrival(tripRequestSocket.id, tripRequestSocket.customerId)
       }
@@ -662,6 +782,9 @@ export default function PendingRequests({ navigation, route }) {
   // End Button (Pickup → Destination)
   useEffect(() => {
     const fetchRouteDetails = () => {
+      // Only run this logic if trip has started
+      if (!showStartButton) return // 👈 Prevent End button before Start is clicked
+
       if (!userOrigin.latitude || !userDestination.latitude) return
 
       // Calculate distance using Haversine function
@@ -678,12 +801,13 @@ export default function PendingRequests({ navigation, route }) {
       setEta(etaValue)
       setDistanceTraveld(`${(distanceInMeters / 1000).toFixed(2)} km`)
 
-      // Show End button if driver is within 50cm (0.5m) of destination
-      setShowEndButton(distanceInMeters <= 500)
+      // Show End button only when trip has started AND within range (e.g. 150m)
+      setShowEndButton(showStartButton && distanceInMeters <= 150)
     }
 
     fetchRouteDetails()
-  }, [userOrigin, userDestination])
+  }, [userOrigin, userDestination, showStartButton]) // 👈 Add showStartButton as a dependency
+
 
   //update trip and notify customer when driver clicks start trip
   const handleStartTrip = async () => {
@@ -712,6 +836,8 @@ export default function PendingRequests({ navigation, route }) {
       if (!paymentResponse.ok) throw new Error("Error updating payment status")
 
       console.log("Payment status updated to success")
+      // 3️⃣ Start background location tracking
+      await startBackgroundLocationTracking();
 
       // 3️⃣ Alert customer
       emitStartTrip(tripData.id, tripData.customerId)
@@ -755,6 +881,8 @@ export default function PendingRequests({ navigation, route }) {
       });
 
       if (!response.ok) throw new Error("Error updating trip status");
+      // Stop background location tracking
+      await stopBackgroundLocationTracking();
 
       handleUpdateDriverState();
       emitEndTrip(tripData.id, tripData.customerId);
@@ -765,7 +893,7 @@ export default function PendingRequests({ navigation, route }) {
       setUserDestination({ latitude: null, longitude: null });
       setShowStartButton(false);
       setShowEndButton(false);
-       dispatch(clearMessages());
+      dispatch(clearMessages());
       setEta("N/A");
       setDistance("N/A");
       setDistanceTraveld("N/A");
@@ -841,7 +969,7 @@ export default function PendingRequests({ navigation, route }) {
       {/* Action Buttons */}
 
       <View style={styles.actionButtonsContainer}>
-        {/* Phone Button (Existing) */}
+        {/* Phone Button (Existing) 
         {tripStatusAccepted === "accepted" && (
           <TouchableOpacity
             style={styles.actionButton}
@@ -860,7 +988,7 @@ export default function PendingRequests({ navigation, route }) {
             )}
           </TouchableOpacity>
         )}
-
+*/}
         {/* Bell Button (Existing) */}
         {tripStatusAccepted !== "on-going" && tripStatusAccepted !== "accepted" && (
           <Animated.View style={[{ transform: [{ scale: bellAnimation }] }]}>
@@ -884,10 +1012,24 @@ export default function PendingRequests({ navigation, route }) {
       </View>
 
       {/* Start Trip Button */}
-      {showStartButton && tripStatusAccepted !== "on-going" && tripStatusAccepted !== "canceled" && (
+      {showStartButton &&
+        tripStatusAccepted !== "on-going" &&
+        tripStatusAccepted !== "canceled" && (
+          <TouchableOpacity
+            style={[styles.commonButton, styles.startButton]}
+            onPress={handleStartTrip}
+          >
+            <Text style={styles.buttonText}>Start Trip</Text>
+          </TouchableOpacity>
+        )}
 
-        <TouchableOpacity style={styles.startButton} onPress={handleStartTrip}>
-          <Text style={styles.buttonText}>Start Trip</Text>
+      {/* End Ride Button */}
+      {showEndButton && (
+        <TouchableOpacity
+          style={[styles.commonButton, styles.endRideButton]}
+          onPress={handleEndRide}
+        >
+          <Text style={styles.buttonText}>End Ride</Text>
         </TouchableOpacity>
       )}
 
@@ -918,11 +1060,7 @@ export default function PendingRequests({ navigation, route }) {
           </TouchableOpacity>
         </View>
       )}
-      {showEndButton && (
-        <TouchableOpacity style={styles.endRideButton} onPress={handleEndRide}>
-          <Text style={styles.endRideButtonText}>End Ride</Text>
-        </TouchableOpacity>
-      )}
+
 
       {/* Trip Cancellation Modal */}
       <TripCancellationModal isVisible={cancelModalVisible} onClose={handleCloseModal} onCancel={handleCancel} />
@@ -990,7 +1128,7 @@ const styles = StyleSheet.create({
   },
   goOnlineButton: {
     position: "absolute",
-    bottom: 130, // Adjust as needed
+    bottom: 110, // Adjust as needed
     left: SCREEN_WIDTH / 2 - 30, // Center the button horizontally
     backgroundColor: "#0DCAF0", // Updated to the requested color
     borderRadius: 30, // Circular shape
@@ -1050,41 +1188,42 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5, // Elevation for Android
   },
-  startButton: {
+  commonButton: {
     position: "absolute",
-    bottom: 200, // Adjust as needed
-    left: SCREEN_WIDTH / 2 - 70, // Center the button horizontally
-    backgroundColor: "#0DCAF0", // Updated to the requested color
-    paddingVertical: 15,
-    paddingHorizontal: 25,
+    left: SCREEN_WIDTH / 2 - 70, // Center horizontally
+    width: 140,
+    height: 55,
     borderRadius: 30,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10, // Space between buttons
     flexDirection: "row",
+    elevation: 5,
+  },
+
+  startButton: {
+    bottom: 260, // slightly above the End Ride button
+    backgroundColor: "#0DCAF0",
     shadowColor: "#0DCAF0",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 5,
   },
+
   endRideButton: {
-    position: "absolute",
-    bottom: 200, // Adjust as needed
-    left: SCREEN_WIDTH / 2 - 70, // Center the button horizontally
-    backgroundColor: "#FF6B6B", // Red color for end button
-    paddingVertical: 15,
-    paddingHorizontal: 25,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
+    bottom: 200, // same base position
+    backgroundColor: "#FF6B6B",
     shadowColor: "#FF6B6B",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 5,
   },
+
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+
   buttonText: {
     color: "#fff", // White text color for both buttons
     fontSize: 16,

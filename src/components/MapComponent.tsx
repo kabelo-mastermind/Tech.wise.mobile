@@ -97,6 +97,83 @@ function getCoordinateAtDistanceAndBearing(startCoord, distanceMeters, bearingDe
   }
 }
 
+// Improved zoom level calculation based on context
+function getZoomLevel(speed, routeType = 'normal') {
+  // If speed is provided, use it to determine zoom level
+  if (speed !== null && speed !== undefined) {
+    if (speed > 60) return 0.01; // Zoom out for highway speeds
+    if (speed > 30) return 0.005; // Normal driving speeds
+    return 0.002; // Zoom in for city driving/turns
+  }
+  
+  // Fallback based on route type
+  switch (routeType) {
+    case 'highway':
+      return 0.01;
+    case 'city':
+      return 0.002;
+    case 'normal':
+    default:
+      return 0.005;
+  }
+}
+
+// Calculate speed based on previous and current location
+function calculateSpeed(prevLocation, currentLocation, timeDiffMs) {
+  if (!prevLocation || !currentLocation || timeDiffMs <= 0) return 0;
+  
+  const distance = calculateDistance(
+    prevLocation.latitude,
+    prevLocation.longitude,
+    currentLocation.latitude,
+    currentLocation.longitude
+  );
+  
+  const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+  return distance / 1000 / timeDiffHours; // km/h
+}
+
+// Calculate current bearing between two locations
+function calculateCurrentBearing(prevLocation, currentLocation) {
+  if (!prevLocation || !currentLocation) return 0;
+  
+  return calculateBearing(prevLocation, currentLocation);
+}
+
+// Calculate route progress percentage
+function calculateRouteProgress(currentLocation, polylineCoords) {
+  if (!polylineCoords || polylineCoords.length < 2 || !currentLocation) return 0;
+  
+  let closestDistance = Number.POSITIVE_INFINITY;
+  let closestIndex = 0;
+  
+  // Find closest point on polyline
+  polylineCoords.forEach((coord, index) => {
+    const distance = calculateDistance(
+      currentLocation.latitude,
+      currentLocation.longitude,
+      coord.latitude,
+      coord.longitude
+    );
+    
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+  
+  // Calculate progress percentage
+  const progress = (closestIndex / (polylineCoords.length - 1)) * 100;
+  return Math.min(Math.max(progress, 0), 100); // Clamp between 0-100
+}
+
+// Camera modes
+const CAMERA_MODES = {
+  FOLLOW: 'follow',      // Follows driver with rotation
+  OVERVIEW: 'overview',  // Shows entire route
+  NORTH_UP: 'north_up',  // Traditional map view (north always up)
+};
+
 const THEME = {
   background: "#121212",
   card: "#1E1E1E",
@@ -108,7 +185,6 @@ const THEME = {
   },
 }
 
-
 const MapComponent = ({
   userOrigin,
   userDestination,
@@ -116,6 +192,7 @@ const MapComponent = ({
   tripStart,
   mapRef: externalMapRef,
   hideNavigation = false,
+  driverSpeed = null,
 }) => {
   const internalMapRef = useRef(null)
   const mapRef = externalMapRef || internalMapRef
@@ -133,61 +210,197 @@ const MapComponent = ({
   const [polylineCoords, setPolylineCoords] = useState([])
   const [isAnimating, setIsAnimating] = useState(false)
   const [mapReady, setMapReady] = useState(false)
-  const markerPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current
   const [currentMarkerCoordinate, setCurrentMarkerCoordinate] = useState(null)
+  const [currentSpeed, setCurrentSpeed] = useState(driverSpeed || 0)
+  const [markerBearing, setMarkerBearing] = useState(0)
+  const [routeProgress, setRouteProgress] = useState(0)
+  const [cameraMode, setCameraMode] = useState(CAMERA_MODES.FOLLOW)
+  const [isUserInteracting, setIsUserInteracting] = useState(false)
+  
+  // Smooth animation refs
+  const smoothMarkerPosition = useRef(new Animated.ValueXY()).current
+  const markerScaleAnim = useRef(new Animated.Value(1)).current
+  const pulseAnim = useRef(new Animated.Value(1)).current
+  const lastUpdateTime = useRef(Date.now())
 
   // Use tripStart directly instead of local state
   const tripStarted = tripStart;
 
+  // Smooth marker animation
+  const animateMarkerToPosition = useCallback((newCoordinate) => {
+    Animated.parallel([
+      Animated.timing(smoothMarkerPosition, {
+        toValue: {
+          x: newCoordinate.longitude,
+          y: newCoordinate.latitude
+        },
+        duration: 1000,
+        useNativeDriver: false,
+      }),
+      Animated.sequence([
+        Animated.timing(markerScaleAnim, {
+          toValue: 1.2,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(markerScaleAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ])
+    ]).start();
+  }, []);
+
+  // Pulse animation for driver marker
+  useEffect(() => {
+    if (!tripStarted) return;
+    
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [tripStarted]);
+
   const centerMap = useCallback(() => {
     if (!mapRef?.current || !driverLocation) return;
 
+    const zoomLevel = getZoomLevel(currentSpeed);
+    
     mapRef.current.animateToRegion({
       latitude: driverLocation.latitude,
       longitude: driverLocation.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
+      latitudeDelta: zoomLevel,
+      longitudeDelta: zoomLevel,
     }, 1000);
-  }, [driverLocation, mapRef]);
+  }, [driverLocation, mapRef, currentSpeed]);
 
+  // Calculate bearing, speed, and progress when driver location updates
   useEffect(() => {
-    if (driverLocation?.latitude && driverLocation?.longitude && !currentMarkerCoordinate) {
-      setCurrentMarkerCoordinate(driverLocation);
-      markerPosition.setValue({
-        x: driverLocation.longitude,
-        y: driverLocation.latitude,
-      });
-      centerMap();
+    if (driverLocation && prevDriverLocation) {
+      const now = Date.now();
+      const timeDiff = now - lastUpdateTime.current;
+      
+      // Calculate distance moved
+      const distanceMoved = calculateDistance(
+        prevDriverLocation.latitude,
+        prevDriverLocation.longitude,
+        driverLocation.latitude,
+        driverLocation.longitude
+      );
+
+      // Only update bearing if movement is significant (more than 2 meters)
+      if (distanceMoved > 2) {
+        const bearing = calculateCurrentBearing(prevDriverLocation, driverLocation);
+        setMarkerBearing(bearing);
+        setDriverHeading(bearing);
+      }
+      
+      if (timeDiff > 1000) {
+        const speed = calculateSpeed(prevDriverLocation, driverLocation, timeDiff);
+        setCurrentSpeed(speed);
+        lastUpdateTime.current = now;
+      }
+
+      // Update route progress
+      if (polylineCoords.length > 0) {
+        const progress = calculateRouteProgress(driverLocation, polylineCoords);
+        setRouteProgress(progress);
+      }
     }
-  }, [driverLocation, currentMarkerCoordinate, centerMap]);
+    
+    if (driverLocation) {
+      setPrevDriverLocation(driverLocation);
+    }
+  }, [driverLocation, prevDriverLocation, polylineCoords]);
 
+  // Use external speed if provided
   useEffect(() => {
-    if (!mapRef?.current || !driverLocation || !mapReady) return;
+    if (driverSpeed !== null && driverSpeed !== undefined) {
+      setCurrentSpeed(driverSpeed);
+    }
+  }, [driverSpeed]);
 
-    const directionToPointUp = polylineCoords.length > 0
-      ? getRouteDirection(driverLocation, polylineCoords)
-      : driverHeading;
+  // Smooth marker movement
+  useEffect(() => {
+    if (driverLocation?.latitude && driverLocation?.longitude) {
+      if (!currentMarkerCoordinate) {
+        setCurrentMarkerCoordinate(driverLocation);
+        smoothMarkerPosition.setValue({
+          x: driverLocation.longitude,
+          y: driverLocation.latitude,
+        });
+      } else {
+        animateMarkerToPosition(driverLocation);
+        setCurrentMarkerCoordinate(driverLocation);
+      }
+    }
+  }, [driverLocation, currentMarkerCoordinate, animateMarkerToPosition]);
 
-    const targetMapHeading = normalizeAngle(360 - directionToPointUp);
-    const offsetDistanceMeters = 0;
-    const targetCenter = getCoordinateAtDistanceAndBearing(
-      driverLocation,
-      offsetDistanceMeters,
-      directionToPointUp
-    );
+  // Improved camera animation with different modes
+  useEffect(() => {
+    if (!mapRef?.current || !driverLocation || !mapReady || isUserInteracting) return;
 
-    mapRef.current.animateCamera(
-      {
-        center: targetCenter,
-        heading: targetMapHeading,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-        pitch: 0,
-      },
-      { duration: 500 }
-    );
-    setMapCameraHeading(targetMapHeading);
-  }, [driverLocation, polylineCoords, mapReady, driverHeading, mapRef]);
+    let targetCenter = driverLocation;
+    let targetHeading = 0;
+    let zoomLevel = getZoomLevel(currentSpeed);
+
+    switch (cameraMode) {
+      case CAMERA_MODES.FOLLOW:
+        const directionToPointUp = polylineCoords.length > 0
+          ? getRouteDirection(driverLocation, polylineCoords)
+          : driverHeading;
+        targetHeading = normalizeAngle(360 - directionToPointUp);
+        const offsetDistanceMeters = 50;
+        targetCenter = getCoordinateAtDistanceAndBearing(
+          driverLocation,
+          offsetDistanceMeters,
+          directionToPointUp
+        );
+        break;
+
+      case CAMERA_MODES.OVERVIEW:
+        // Show entire route if we have polyline coordinates
+        if (polylineCoords.length > 0) {
+          const coordinates = [driverLocation, ...polylineCoords];
+          mapRef.current.fitToCoordinates(coordinates, {
+            edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
+            animated: true,
+          });
+          return; // fitToCoordinates handles the animation
+        }
+        break;
+
+      case CAMERA_MODES.NORTH_UP:
+        targetHeading = 0; // North always up
+        zoomLevel = 0.005; // Fixed zoom level
+        break;
+    }
+
+    if (cameraMode !== CAMERA_MODES.OVERVIEW) {
+      mapRef.current.animateCamera(
+        {
+          center: targetCenter,
+          heading: targetHeading,
+          latitudeDelta: zoomLevel,
+          longitudeDelta: zoomLevel,
+          pitch: 0,
+        },
+        { duration: 1000 }
+      );
+      setMapCameraHeading(targetHeading);
+    }
+  }, [driverLocation, polylineCoords, mapReady, driverHeading, mapRef, currentSpeed, cameraMode, isUserInteracting]);
 
   // Reset trip data when trip ends
   useEffect(() => {
@@ -197,6 +410,10 @@ const MapComponent = ({
       setInstructions([]);
       setCurrentStep(0);
       setPolylineCoords([]);
+      setCurrentSpeed(0);
+      setMarkerBearing(0);
+      setRouteProgress(0);
+      setCameraMode(CAMERA_MODES.FOLLOW);
     }
   }, [tripStart]);
 
@@ -204,7 +421,9 @@ const MapComponent = ({
     setMapReady(true);
   };
 
-  const handleRegionChangeComplete = async (region) => {
+  const handleRegionChangeComplete = async (region, details) => {
+    setIsUserInteracting(details?.isGesture || false);
+    
     try {
       if (mapRef?.current && mapRef.current.getCamera) {
         const camera = await mapRef.current.getCamera();
@@ -231,6 +450,8 @@ const MapComponent = ({
 
   const centerOnCurrentLocation = () => {
     centerMap();
+    setCameraMode(CAMERA_MODES.FOLLOW);
+    setIsUserInteracting(false);
   };
 
   const toggleTripDetails = () => {
@@ -240,6 +461,40 @@ const MapComponent = ({
       duration: 300,
       useNativeDriver: false,
     }).start();
+  };
+
+  const cycleCameraMode = () => {
+    const modes = Object.values(CAMERA_MODES);
+    const currentIndex = modes.indexOf(cameraMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    setCameraMode(modes[nextIndex]);
+    setIsUserInteracting(false);
+  };
+
+  const getCameraModeIcon = () => {
+    switch (cameraMode) {
+      case CAMERA_MODES.FOLLOW:
+        return 'navigation';
+      case CAMERA_MODES.OVERVIEW:
+        return 'map';
+      case CAMERA_MODES.NORTH_UP:
+        return 'compass';
+      default:
+        return 'navigation';
+    }
+  };
+
+  const getCameraModeLabel = () => {
+    switch (cameraMode) {
+      case CAMERA_MODES.FOLLOW:
+        return 'Follow';
+      case CAMERA_MODES.OVERVIEW:
+        return 'Overview';
+      case CAMERA_MODES.NORTH_UP:
+        return 'North Up';
+      default:
+        return 'Follow';
+    }
   };
 
   const getInitialRegion = () => {
@@ -269,6 +524,37 @@ const MapComponent = ({
 
   const initialRegion = getInitialRegion();
 
+  // Custom driver marker with smooth animations
+  const AnimatedDriverMarker = () => {
+    if (!currentMarkerCoordinate) return null;
+
+    return (
+      <Marker 
+        coordinate={currentMarkerCoordinate} 
+        anchor={{ x: 0.5, y: 0.5 }} 
+        flat={true}
+        rotation={markerBearing}
+      >
+        <Animated.View style={[
+          styles.driverMarkerContainer,
+          {
+            transform: [
+              { scale: markerScaleAnim },
+              { scale: pulseAnim }
+            ]
+          }
+        ]}>
+          <Image 
+            source={require("../../assets/carM.png")} 
+            style={styles.driverMarkerImage} 
+            resizeMode="contain" 
+          />
+          <View style={styles.directionArrow} />
+        </Animated.View>
+      </Marker>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -288,15 +574,11 @@ const MapComponent = ({
         zoomEnabled={true}
         minZoomLevel={10}
         maxZoomLevel={23}
+        onPanDrag={() => setIsUserInteracting(true)}
+        onDoublePress={() => setIsUserInteracting(true)}
       >
-        {/* Driver Marker */}
-        {currentMarkerCoordinate && (
-          <Marker coordinate={currentMarkerCoordinate} anchor={{ x: 0.5, y: 0.5 }} flat={false} rotation={0}>
-            <View style={styles.driverMarkerContainer}>
-              <Image source={require("../../assets/carM.png")} style={styles.driverMarkerImage} resizeMode="contain" />
-            </View>
-          </Marker>
-        )}
+        {/* Animated Driver Marker */}
+        <AnimatedDriverMarker />
 
         {/* Origin Marker */}
         {userOrigin?.latitude && userOrigin?.longitude && (
@@ -335,10 +617,10 @@ const MapComponent = ({
           />
         )}
 
-        {/* During trip: Origin to Destination */}
-        {tripStarted && userOrigin?.latitude && userDestination?.latitude && GOOGLE_MAPS_APIKEY && (
+        {/* During trip: Driver to Destination */}
+        {tripStarted && driverLocation?.latitude && userDestination?.latitude && GOOGLE_MAPS_APIKEY && (
           <MapViewDirections
-            origin={userOrigin}
+            origin={driverLocation}
             destination={userDestination}
             apikey={GOOGLE_MAPS_APIKEY}
             strokeWidth={4}
@@ -348,6 +630,34 @@ const MapComponent = ({
           />
         )}
       </MapView>
+
+      {/* Route Progress Bar */}
+      {tripStarted && routeProgress > 0 && (
+        <View style={styles.progressBarContainer}>
+          <View style={styles.progressBar}>
+            <View 
+              style={[
+                styles.progressFill, 
+                { width: `${routeProgress}%` }
+              ]} 
+            />
+          </View>
+          <Text style={styles.progressText}>
+            {routeProgress.toFixed(1)}% Complete
+          </Text>
+        </View>
+      )}
+
+      {/* Camera Mode Toggle Button */}
+      <TouchableOpacity style={styles.cameraModeButton} onPress={cycleCameraMode}>
+        <Icon 
+          type="material-community" 
+          name={getCameraModeIcon()} 
+          color="#FFFFFF" 
+          size={20} 
+        />
+        <Text style={styles.cameraModeText}>{getCameraModeLabel()}</Text>
+      </TouchableOpacity>
 
       {/* Trip Details Card */}
       {distance && duration && (
@@ -382,6 +692,30 @@ const MapComponent = ({
                   <Text style={styles.tripDetailLabel}>ETA</Text>
                 </View>
               </View>
+              {currentSpeed > 0 && (
+                <>
+                  <View style={styles.tripDetailDivider} />
+                  <View style={styles.tripDetailSection}>
+                    <Icon type="material-community" name="speedometer" color={THEME.primary} size={24} />
+                    <View style={styles.tripDetailValue}>
+                      <Text style={styles.tripDetailValueText}>{currentSpeed.toFixed(0)} km/h</Text>
+                      <Text style={styles.tripDetailLabel}>Speed</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+              {routeProgress > 0 && (
+                <>
+                  <View style={styles.tripDetailDivider} />
+                  <View style={styles.tripDetailSection}>
+                    <Icon type="material-community" name="progress-check" color={THEME.primary} size={24} />
+                    <View style={styles.tripDetailValue}>
+                      <Text style={styles.tripDetailValueText}>{routeProgress.toFixed(1)}%</Text>
+                      <Text style={styles.tripDetailLabel}>Progress</Text>
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
           )}
         </Animated.View>
@@ -393,6 +727,14 @@ const MapComponent = ({
           <View style={styles.navigationHeader}>
             <Icon type="material-community" name="navigation" color={THEME.primary} size={20} />
             <Text style={styles.navigationTitle}>Navigation</Text>
+            {/* <TouchableOpacity style={styles.cameraModeSmallButton} onPress={cycleCameraMode}>
+              <Icon 
+                type="material-community" 
+                name={getCameraModeIcon()} 
+                color={THEME.primary} 
+                size={16} 
+              />
+            </TouchableOpacity> */}
           </View>
           <View style={styles.navigationContent}>
             {instructions.length > 0 && currentStep < instructions.length ? (
@@ -423,18 +765,37 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   driverMarkerContainer: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 20,
-    backgroundColor: "rgba(0, 216, 240, 0.3)",
+    backgroundColor: "rgba(0, 216, 240, 0.4)",
     borderWidth: 2,
     borderColor: "#00D8F0",
+    shadowColor: "#00D8F0",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 8,
   },
   driverMarkerImage: {
-    width: 25,
-    height: 25,
+    width: 26,
+    height: 26,
+  },
+  directionArrow: {
+    position: 'absolute',
+    bottom: -6,
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderBottomWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#00D8F0',
   },
   originMarker: {
     alignItems: "center",
@@ -455,6 +816,60 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "600",
+  },
+  // Progress Bar Styles
+  progressBarContainer: {
+    position: "absolute",
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(26, 29, 38, 0.9)",
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(0, 216, 240, 0.3)",
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: THEME.primary,
+    borderRadius: 3,
+  },
+  progressText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  // Camera Mode Button
+  cameraModeButton: {
+    position: "absolute",
+    bottom: 150,
+    right: 16,
+    backgroundColor: "rgba(26, 29, 38, 0.9)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(0, 216, 240, 0.3)",
+  },
+  cameraModeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  cameraModeSmallButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   tripDetailsCard: {
     position: "absolute",
@@ -493,12 +908,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 16,
+    flexWrap: 'wrap',
   },
   tripDetailSection: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    minWidth: '45%',
+    marginBottom: 8,
   },
   tripDetailValue: {
     marginLeft: 12,
@@ -506,12 +924,12 @@ const styles = StyleSheet.create({
   },
   tripDetailValueText: {
     color: "#FFFFFF",
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "700",
   },
   tripDetailLabel: {
     color: "#AAAAAA",
-    fontSize: 14,
+    fontSize: 12,
   },
   tripDetailDivider: {
     width: 1,
@@ -542,6 +960,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     marginLeft: 8,
+    flex: 1,
   },
   navigationContent: {
     padding: 16,

@@ -12,11 +12,14 @@ import {
   Animated,
   Platform,
   SafeAreaView,
+  Modal,
+  Linking,
 } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { Ionicons } from "@expo/vector-icons"
 import CustomDrawer from "../components/CustomDrawer"
 import { Icon } from "react-native-elements"
+import ChatBot from "../components/ChatBot" // Import the ChatBot component
 
 const { width, height } = Dimensions.get("window")
 
@@ -97,7 +100,7 @@ const NthomeServicesScreen = ({ navigation }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
   const [scrollY] = useState(new Animated.Value(0))
-
+  const [chatBotVisible, setChatBotVisible] = useState(false) // Chatbot modal state
   // Navigation handlers for each service
   // const handleRidesPress = () => {
   //   navigation.navigate("RequestScreen")
@@ -124,6 +127,25 @@ const NthomeServicesScreen = ({ navigation }) => {
     ])
   }
 
+  // Chatbot handlers
+  const openChatBot = () => {
+    setChatBotVisible(true)
+  }
+
+  const closeChatBot = () => {
+    setChatBotVisible(false)
+  }
+
+  const handleEmailSupport = () => {
+    const email = "nthomecouriers@gmail.com"; // Replace with your support email
+    const subject = "Support Request";
+    const body = "Hi, I need help with...";
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    Linking.openURL(url).catch((err) =>
+      console.error("Failed to open email client:", err)
+    );
+  };
   // Calculate header opacity based on scroll position
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 100],
@@ -208,7 +230,7 @@ const NthomeServicesScreen = ({ navigation }) => {
               <Text style={styles.infoText}>
                 Our customer support team is available 24/7 to assist you with any questions.
               </Text>
-              <TouchableOpacity style={styles.infoButton}>
+              <TouchableOpacity style={styles.infoButton} onPress={handleEmailSupport}>
                 <Text style={styles.infoButtonText}>Contact Support</Text>
               </TouchableOpacity>
             </View>
@@ -216,8 +238,8 @@ const NthomeServicesScreen = ({ navigation }) => {
         </Animated.ScrollView>
       </View>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.9}>
+      {/* Floating Action Button for Chat */}
+      <TouchableOpacity style={styles.fab} activeOpacity={0.9} onPress={openChatBot}>
         <LinearGradient
           colors={["#0DCAF0", "#0AA8CC"]}
           style={styles.fabGradient}
@@ -227,6 +249,16 @@ const NthomeServicesScreen = ({ navigation }) => {
           <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
+
+      {/* ChatBot Modal */}
+      <Modal
+        visible={chatBotVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeChatBot}
+      >
+        <ChatBot onClose={closeChatBot} />
+      </Modal>
 
       {/* Custom Drawer - Wrapped in an overlay View */}
       {drawerOpen && (
