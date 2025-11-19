@@ -105,7 +105,7 @@ function getZoomLevel(speed, routeType = 'normal') {
     if (speed > 30) return 0.005; // Normal driving speeds
     return 0.002; // Zoom in for city driving/turns
   }
-  
+
   // Fallback based on route type
   switch (routeType) {
     case 'highway':
@@ -121,14 +121,14 @@ function getZoomLevel(speed, routeType = 'normal') {
 // Calculate speed based on previous and current location
 function calculateSpeed(prevLocation, currentLocation, timeDiffMs) {
   if (!prevLocation || !currentLocation || timeDiffMs <= 0) return 0;
-  
+
   const distance = calculateDistance(
     prevLocation.latitude,
     prevLocation.longitude,
     currentLocation.latitude,
     currentLocation.longitude
   );
-  
+
   const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
   return distance / 1000 / timeDiffHours; // km/h
 }
@@ -136,17 +136,17 @@ function calculateSpeed(prevLocation, currentLocation, timeDiffMs) {
 // Calculate current bearing between two locations
 function calculateCurrentBearing(prevLocation, currentLocation) {
   if (!prevLocation || !currentLocation) return 0;
-  
+
   return calculateBearing(prevLocation, currentLocation);
 }
 
 // Calculate route progress percentage
 function calculateRouteProgress(currentLocation, polylineCoords) {
   if (!polylineCoords || polylineCoords.length < 2 || !currentLocation) return 0;
-  
+
   let closestDistance = Number.POSITIVE_INFINITY;
   let closestIndex = 0;
-  
+
   // Find closest point on polyline
   polylineCoords.forEach((coord, index) => {
     const distance = calculateDistance(
@@ -155,13 +155,13 @@ function calculateRouteProgress(currentLocation, polylineCoords) {
       coord.latitude,
       coord.longitude
     );
-    
+
     if (distance < closestDistance) {
       closestDistance = distance;
       closestIndex = index;
     }
   });
-  
+
   // Calculate progress percentage
   const progress = (closestIndex / (polylineCoords.length - 1)) * 100;
   return Math.min(Math.max(progress, 0), 100); // Clamp between 0-100
@@ -216,7 +216,7 @@ const MapComponent = ({
   const [routeProgress, setRouteProgress] = useState(0)
   const [cameraMode, setCameraMode] = useState(CAMERA_MODES.FOLLOW)
   const [isUserInteracting, setIsUserInteracting] = useState(false)
-  
+
   // Smooth animation refs
   const smoothMarkerPosition = useRef(new Animated.ValueXY()).current
   const markerScaleAnim = useRef(new Animated.Value(1)).current
@@ -255,7 +255,7 @@ const MapComponent = ({
   // Pulse animation for driver marker
   useEffect(() => {
     if (!tripStarted) return;
-    
+
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -276,7 +276,7 @@ const MapComponent = ({
     if (!mapRef?.current || !driverLocation) return;
 
     const zoomLevel = getZoomLevel(currentSpeed);
-    
+
     mapRef.current.animateToRegion({
       latitude: driverLocation.latitude,
       longitude: driverLocation.longitude,
@@ -290,7 +290,7 @@ const MapComponent = ({
     if (driverLocation && prevDriverLocation) {
       const now = Date.now();
       const timeDiff = now - lastUpdateTime.current;
-      
+
       // Calculate distance moved
       const distanceMoved = calculateDistance(
         prevDriverLocation.latitude,
@@ -305,7 +305,7 @@ const MapComponent = ({
         setMarkerBearing(bearing);
         setDriverHeading(bearing);
       }
-      
+
       if (timeDiff > 1000) {
         const speed = calculateSpeed(prevDriverLocation, driverLocation, timeDiff);
         setCurrentSpeed(speed);
@@ -318,7 +318,7 @@ const MapComponent = ({
         setRouteProgress(progress);
       }
     }
-    
+
     if (driverLocation) {
       setPrevDriverLocation(driverLocation);
     }
@@ -423,7 +423,7 @@ const MapComponent = ({
 
   const handleRegionChangeComplete = async (region, details) => {
     setIsUserInteracting(details?.isGesture || false);
-    
+
     try {
       if (mapRef?.current && mapRef.current.getCamera) {
         const camera = await mapRef.current.getCamera();
@@ -502,16 +502,16 @@ const MapComponent = ({
       return {
         latitude: driverLocation.latitude,
         longitude: driverLocation.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
+        latitudeDelta: 0.002,
+        longitudeDelta: 0.002,
       };
     }
     if (userOrigin?.latitude && userOrigin?.longitude) {
       return {
         latitude: userOrigin.latitude,
         longitude: userOrigin.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
+        latitudeDelta: 0.002,
+        longitudeDelta: 0.002,
       };
     }
     return {
@@ -529,9 +529,9 @@ const MapComponent = ({
     if (!currentMarkerCoordinate) return null;
 
     return (
-      <Marker 
-        coordinate={currentMarkerCoordinate} 
-        anchor={{ x: 0.5, y: 0.5 }} 
+      <Marker
+        coordinate={currentMarkerCoordinate}
+        anchor={{ x: 0.5, y: 0.5 }}
         flat={true}
         rotation={markerBearing}
       >
@@ -544,10 +544,10 @@ const MapComponent = ({
             ]
           }
         ]}>
-          <Image 
-            source={require("../../assets/carM.png")} 
-            style={styles.driverMarkerImage} 
-            resizeMode="contain" 
+          <Image
+            source={require("../../assets/carM.png")}
+            style={styles.driverMarkerImage}
+            resizeMode="contain"
           />
           <View style={styles.directionArrow} />
         </Animated.View>
@@ -584,7 +584,7 @@ const MapComponent = ({
         {userOrigin?.latitude && userOrigin?.longitude && (
           <Marker coordinate={userOrigin}>
             <View style={styles.originMarker}>
-              <Icon type="material-community" name="map-marker" color={THEME.primary} size={30} />
+              <Icon type="material-community" name="map-marker" color={THEME.primary} size={25} />
               <View style={styles.markerLabelContainer}>
                 <Text style={styles.markerLabel}>Pickup</Text>
               </View>
@@ -596,7 +596,7 @@ const MapComponent = ({
         {tripStarted && userDestination?.latitude && userDestination?.longitude && (
           <Marker coordinate={userDestination}>
             <View style={styles.destinationMarker}>
-              <Icon type="material-community" name="map-marker" color={THEME.secondary} size={30} />
+              <Icon type="material-community" name="map-marker" color={THEME.secondary} size={25} />
               <View style={styles.markerLabelContainer}>
                 <Text style={styles.markerLabel}>Destination</Text>
               </View>
@@ -635,11 +635,11 @@ const MapComponent = ({
       {tripStarted && routeProgress > 0 && (
         <View style={styles.progressBarContainer}>
           <View style={styles.progressBar}>
-            <View 
+            <View
               style={[
-                styles.progressFill, 
+                styles.progressFill,
                 { width: `${routeProgress}%` }
-              ]} 
+              ]}
             />
           </View>
           <Text style={styles.progressText}>
@@ -650,11 +650,11 @@ const MapComponent = ({
 
       {/* Camera Mode Toggle Button */}
       <TouchableOpacity style={styles.cameraModeButton} onPress={cycleCameraMode}>
-        <Icon 
-          type="material-community" 
-          name={getCameraModeIcon()} 
-          color="#FFFFFF" 
-          size={20} 
+        <Icon
+          type="material-community"
+          name={getCameraModeIcon()}
+          color="#FFFFFF"
+          size={20}
         />
         <Text style={styles.cameraModeText}>{getCameraModeLabel()}</Text>
       </TouchableOpacity>
@@ -677,24 +677,32 @@ const MapComponent = ({
           </TouchableOpacity>
           {isTripDetailsExpanded && (
             <View style={styles.tripDetailsContent}>
-              <View style={styles.tripDetailSection}>
-                <Icon type="material-community" name="map-marker-distance" color={THEME.primary} size={24} />
-                <View style={styles.tripDetailValue}>
-                  <Text style={styles.tripDetailValueText}>{distance} km</Text>
-                  <Text style={styles.tripDetailLabel}>Distance</Text>
+              <View style={styles.rowContainer}>
+                {/* Distance */}
+                <View style={styles.tripDetailSection}>
+                  <Icon type="material-community" name="map-marker-distance" color={THEME.primary} size={24} />
+                  <View style={styles.tripDetailValue}>
+                    <Text style={styles.tripDetailValueText}>{distance} km</Text>
+                    <Text style={styles.tripDetailLabel}>Distance</Text>
+                  </View>
+                </View>
+
+                <View style={styles.tripDetailDivider} />
+
+                {/* ETA */}
+                <View style={styles.tripDetailSection}>
+                  <Icon type="material-community" name="clock-outline" color={THEME.primary} size={24} />
+                  <View style={styles.tripDetailValue}>
+                    <Text style={styles.tripDetailValueText}>{duration} min</Text>
+                    <Text style={styles.tripDetailLabel}>ETA</Text>
+                  </View>
                 </View>
               </View>
-              <View style={styles.tripDetailDivider} />
-              <View style={styles.tripDetailSection}>
-                <Icon type="material-community" name="clock-outline" color={THEME.primary} size={24} />
-                <View style={styles.tripDetailValue}>
-                  <Text style={styles.tripDetailValueText}>{duration} min</Text>
-                  <Text style={styles.tripDetailLabel}>ETA</Text>
-                </View>
-              </View>
-              {currentSpeed > 0 && (
+
+              {/* Keep speed and progress below */}
+              {/* {currentSpeed > 0 && (
                 <>
-                  <View style={styles.tripDetailDivider} />
+                  <View style={styles.tripDetailDividerHorizontal} />
                   <View style={styles.tripDetailSection}>
                     <Icon type="material-community" name="speedometer" color={THEME.primary} size={24} />
                     <View style={styles.tripDetailValue}>
@@ -704,9 +712,10 @@ const MapComponent = ({
                   </View>
                 </>
               )}
+
               {routeProgress > 0 && (
                 <>
-                  <View style={styles.tripDetailDivider} />
+                  <View style={styles.tripDetailDividerHorizontal} />
                   <View style={styles.tripDetailSection}>
                     <Icon type="material-community" name="progress-check" color={THEME.primary} size={24} />
                     <View style={styles.tripDetailValue}>
@@ -715,9 +724,10 @@ const MapComponent = ({
                     </View>
                   </View>
                 </>
-              )}
+              )} */}
             </View>
           )}
+
         </Animated.View>
       )}
 
@@ -765,8 +775,8 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   driverMarkerContainer: {
-    width: 32,
-    height: 32,
+    width: 30,
+    height: 30,
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 20,
@@ -780,8 +790,8 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   driverMarkerImage: {
-    width: 26,
-    height: 26,
+    width: 25,
+    height: 25,
   },
   directionArrow: {
     position: 'absolute',
@@ -910,6 +920,26 @@ const styles = StyleSheet.create({
     padding: 16,
     flexWrap: 'wrap',
   },
+  rowContainer: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+  paddingHorizontal: 16,
+},
+
+tripDetailDivider: {
+  width: 1,
+  height: "70%",
+  backgroundColor: "rgba(255, 255, 255, 0.1)",
+  marginHorizontal: 10,
+},
+
+tripDetailDividerHorizontal: {
+  height: 1,
+  backgroundColor: "rgba(255, 255, 255, 0.1)",
+  marginVertical: 8,
+},
+
   tripDetailSection: {
     flex: 1,
     flexDirection: "row",
@@ -931,11 +961,7 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 12,
   },
-  tripDetailDivider: {
-    width: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    marginHorizontal: 8,
-  },
+
   navigationCard: {
     position: "absolute",
     bottom: 40,

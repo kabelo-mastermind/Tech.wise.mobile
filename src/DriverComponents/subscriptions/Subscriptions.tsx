@@ -9,12 +9,14 @@ import { api } from "../../../api"
 import CustomDrawer from "../../components/CustomDrawer"
 import { Icon } from "react-native-elements"
 import AwesomeAlert from "react-native-awesome-alerts"
+import LoadingScreen from "../../components/LoadingScreen"; // 👈 import LoadingScreen
 
 const SubscriptionPage = ({ navigation, route }) => {
   const [isFirstTime, setIsFirstTime] = useState(null)
   const [subscription, setSubscription] = useState(null)
   const [latestSubscriptionCode, setLatestSubscriptionCode] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null) // 👈 Add error state
   const userEmail = useSelector((state) => state.auth.user?.email || "")
   const user_id = useSelector((state) => state.auth.user?.user_id || "")
   const [customerId, setCustomerId] = useState(null)
@@ -22,10 +24,14 @@ const SubscriptionPage = ({ navigation, route }) => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [selectedPlanType, setSelectedPlanType] = useState(null)
   const [selectedCost, setSelectedCost] = useState(null)
-  const [status, setStatus] = useState(null)// Provide an empty object as fallback
+  const [status, setStatus] = useState(null)
   console.log("statusooooooooooooo--------", status)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
+
+  // 👇 Retry state management
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
 
   // AwesomeAlert state
   const [alertVisible, setAlertVisible] = useState(false)
@@ -63,7 +69,6 @@ const SubscriptionPage = ({ navigation, route }) => {
     setAlertVisible(false)
   }
 
-
   useEffect(() => {
     if (route.params?.status) {
       setStatus(route.params.status)
@@ -73,55 +78,21 @@ const SubscriptionPage = ({ navigation, route }) => {
       setStatus(newstatus)
       console.log("Updated status from newstatus:", newstatus)
     }
-
   }, [route.params?.status])
 
-  // fetch customer ID and subscriptions when the component mounts
-  useEffect(() => {
-    const fetchCustomerIdAndSubscriptions = async () => {
-      const id = await fetchCustomerId(user_id)
-      if (id) {
-        setCustomerId(id)
-        const subscriptionData = await fetchSubscriptions(id)
-        setSubscription(subscriptionData)
-        console.log("Subscription data------------------:", subscriptionData)
-      } else {
-        // Continue with subscription if no customer ID is found
-        setCustomerId(null) // Set to null
-        setSubscription(null) // Proceed without subscription data
-      }
-      setLoading(false) // Set loading to false once data is fetched
-    }
-
-    if (user_id) {
-      fetchCustomerIdAndSubscriptions()
-    }
-  }, [user_id])
-
-  const fetchCustomerId = async (user_id) => {
+  // 👇 Individual fetch functions
+  const fetchCustomerId = async () => {
     try {
       const response = await fetch(`${api}get-customer-id?user_id=${user_id}`)
-
-      // if (!response.ok) {
-      //   throw new Error("Failed to fetch customer ID")
-      // }
-
       const data = await response.json()
-      console.log("Parsed data from backend:", data) // ✅ Properly log the JSON data
-
-      return data.customer_id || null // Return null if not found
+      console.log("Parsed data from backend:", data)
+      return data.customer_id || null
     } catch (error) {
-      // console.error("Error fetching customer ID:", error.message);
-      showAlert({
-        title: "Error",
-        message: error.message || "An unexpected error occurred. Please try again.",
-        type: "error",
-      })
-      return null
+      console.error("Error fetching customer ID:", error.message)
+      throw new Error("Failed to fetch customer ID")
     }
   }
 
-  // Function to fetch subscriptions based on customer ID
   const fetchSubscriptions = async (customerId) => {
     console.log("Fetching subscriptions for customer ID:", customerId)
 
@@ -135,12 +106,10 @@ const SubscriptionPage = ({ navigation, route }) => {
       const subscriptions = await response.json()
 
       if (subscriptions.length > 0) {
-        // Assuming there's a 'createdAt' field in the subscription object
         const latestSubscription = subscriptions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
-
         const latestSubscriptionCode = latestSubscription.subscription_code
         const latestStatus = latestSubscription.status
-        setStatus(latestStatus) // Update status state
+        setStatus(latestStatus)
         console.log("Latest subscription status:", latestStatus)
 
         setLatestSubscriptionCode(latestSubscriptionCode)
@@ -151,15 +120,77 @@ const SubscriptionPage = ({ navigation, route }) => {
         return null
       }
     } catch (error) {
-      //console.error("Error fetching subscriptions:", error)
-      showAlert({
-        title: "Error",
-        message: error.message || "An unexpected error occurred. Please try again.",
-        type: "error",
-      })
-      return null
+      console.error("Error fetching subscriptions:", error)
+      throw new Error("Failed to fetch subscriptions")
     }
   }
+
+  // 👇 Main data fetching function with retry logic
+  const fetchAllData = async () => {
+    if (!user_id) return;
+
+    try {
+      setError(null);
+      setLoading(true);
+
+      const customerId = await fetchCustomerId();
+      setCustomerId(customerId);
+
+      if (customerId) {
+        const subscriptionData = await fetchSubscriptions(customerId);
+        setSubscription(subscriptionData);
+        console.log("Subscription data------------------:", subscriptionData);
+      } else {
+        setSubscription(null);
+      }
+
+      setRetryCount(0); // Reset retry count on success
+    } catch (error) {
+      console.error("Error fetching all data:", error);
+
+      // Check if we should retry
+      if (retryCount < MAX_RETRIES) {
+        const nextRetryCount = retryCount + 1;
+        setRetryCount(nextRetryCount);
+
+        showToast(
+          "error",
+          "Retrying...",
+          `Failed to load subscription data. Retry ${nextRetryCount}/${MAX_RETRIES}`
+        );
+
+        // Auto-retry after 2 seconds
+        setTimeout(() => {
+          fetchAllData();
+        }, 2000);
+      } else {
+        // Max retries reached
+        setError("Unable to load subscription data. Please check your connection and try again.");
+        showAlert({
+          title: "Loading Failed",
+          message: "Failed to load subscription data after multiple attempts. Please try again.",
+          type: "error",
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 👇 Manual retry function for LoadingScreen
+  const retryFetchData = () => {
+    if (retryCount >= MAX_RETRIES) {
+      setRetryCount(0);
+    }
+    fetchAllData();
+  };
+
+  // 👇 Initial data fetch
+  useEffect(() => {
+    if (user_id) {
+      fetchAllData();
+    }
+  }, [user_id])
 
   // Function to handle subscription button press
   const handleSubscribe = async (planType, cost) => {
@@ -194,7 +225,7 @@ const SubscriptionPage = ({ navigation, route }) => {
         Alert.alert("Error", "Failed to initialize transaction.")
       }
     } catch (error) {
-      //console.error("Error:", error.message)
+      console.error("Error:", error.message)
       showAlert({
         title: "Error",
         message: error.message || "An unexpected error occurred. Please try again.",
@@ -255,15 +286,35 @@ const SubscriptionPage = ({ navigation, route }) => {
     })
   }
 
+  // 👇 Use LoadingScreen instead of local loading state
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0DCAF0" />
-        <Text style={styles.loadingText}>Loading subscription plans...</Text>
+      <LoadingScreen
+        loading={loading}
+        error={error}
+        onRetry={retryFetchData}
+      />
+    );
+  }
+
+  // 👇 Error state after max retries (similar to DriverProfile)
+  if (error && !subscription && !customerId) {
+    return (
+      <SafeAreaView style={styles.errorContainer}>
+        <Icon name="error-outline" type="material" size={60} color="#EF4444" />
+        <Text style={styles.errorText}>{error}</Text>
+        <Text style={styles.retryInfo}>
+          {retryCount > 0 && `Retry attempts: ${retryCount}/${MAX_RETRIES}`}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={retryFetchData}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     )
   }
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -438,12 +489,56 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F8FBFD",
+    backgroundColor: "#fff",
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 10,
     fontSize: 16,
-    color: "#64748B",
+    color: "#666",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 20,
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#EF4444",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  retryInfo: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  retryButton: {
+    backgroundColor: "#0DCAF0",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  backButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#0DCAF0",
+  },
+  backButtonText: {
+    color: "#0DCAF0",
+    fontSize: 16,
+    fontWeight: "600",
   },
   header: {
     flexDirection: "row",

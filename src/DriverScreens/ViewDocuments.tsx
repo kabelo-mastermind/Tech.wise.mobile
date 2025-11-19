@@ -22,6 +22,8 @@ import { api } from "../../api"
 import * as FileSystem from "expo-file-system"
 import { WebView } from "react-native-webview"
 import AllCustomAlert from "../components/AllCustomAlert"
+import LoadingScreen from "../components/LoadingScreen"; // 👈 import it
+
 const documentLabels = {
   id_copy: "ID Copy",
   police_clearance: "Police Clearance",
@@ -65,6 +67,7 @@ const ViewDocuments = ({ navigation }) => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [documents, setDocuments] = useState({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null) // 👈 Add error state
   const [downloading, setDownloading] = useState(false)
   const [pdfUrlToView, setPdfUrlToView] = useState<string | null>(null)
 
@@ -79,6 +82,11 @@ const ViewDocuments = ({ navigation }) => {
     onCancel: null,
     onConfirm: null,
   })
+
+  // 👇 Retry state management
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
+
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
   const showAlert = (config) => {
     setAlertConfig({
@@ -88,35 +96,74 @@ const ViewDocuments = ({ navigation }) => {
     })
     setAlertVisible(true)
   }
-  useEffect(() => {
-    const fetchDocuments = async () => {
-      try {
-        const response = await axios.get(`${api}driver_documents/${user_id}`)
-        if (response.data && response.data.documents.length > 0) {
-          setDocuments(response.data.documents[0])
-        }
-      } catch (error) {
-        if (error.response?.status === 404) {
-          showAlert({
-            title: "No Documents Found",
-            message:
-              "You haven’t uploaded any documents yet. Please upload them to get approved and start receiving ride requests.",
-          })
-        } else {
-          showAlert({
-            title: "Error",
-            message: "Failed to fetch documents. Please try again.",
-            type: "error",
-          })
-        }
-      } finally {
-        setLoading(false)
+
+  // 👇 Main fetch function with retry logic
+  const fetchDocuments = async () => {
+    if (!user_id) return;
+
+    try {
+      setError(null);
+      setLoading(true);
+      
+      const response = await axios.get(`${api}driver_documents/${user_id}`)
+      if (response.data && response.data.documents.length > 0) {
+        setDocuments(response.data.documents[0])
+      } else {
+        // No documents found - this is not an error, just empty state
+        setDocuments({})
+        showAlert({
+          title: "No Documents Found",
+          message: "You haven't uploaded any documents yet. Please upload them to get approved and start receiving ride requests.",
+        })
       }
+      
+      setRetryCount(0); // Reset retry count on success
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+      
+      // Check if we should retry
+      if (retryCount < MAX_RETRIES) {
+        const nextRetryCount = retryCount + 1;
+        setRetryCount(nextRetryCount);
+        
+        showAlert({
+          title: "Retrying...",
+          message: `Failed to load documents. Retry ${nextRetryCount}/${MAX_RETRIES}`,
+          type: "info",
+        });
+        
+        // Auto-retry after 2 seconds
+        setTimeout(() => {
+          fetchDocuments();
+        }, 2000);
+      } else {
+        // Max retries reached
+        setError("Unable to load documents. Please check your connection and try again.");
+        showAlert({
+          title: "Loading Failed",
+          message: "Failed to load documents after multiple attempts. Please try again.",
+          type: "error",
+        });
+      }
+    } finally {
+      setLoading(false);
     }
+  }
 
-    if (user_id) fetchDocuments()
+  // 👇 Manual retry function for LoadingScreen
+  const retryFetchData = () => {
+    if (retryCount >= MAX_RETRIES) {
+      setRetryCount(0);
+    }
+    fetchDocuments();
+  };
+
+  // 👇 Initial data fetch
+  useEffect(() => {
+    if (user_id) {
+      fetchDocuments();
+    }
   }, [user_id])
-
 
   const handleOpenDocument = async (url) => {
     if (!url) {
@@ -165,11 +212,32 @@ const ViewDocuments = ({ navigation }) => {
     }
   }
 
+  // 👇 Use LoadingScreen instead of local loading state
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0DCAF0" />
-        <Text style={styles.loadingText}>Loading documents...</Text>
+      <LoadingScreen
+        loading={loading}
+        error={error}
+        onRetry={retryFetchData}
+      />
+    );
+  }
+
+  // 👇 Error state after max retries (similar to DriverProfile)
+  if (error && Object.keys(documents).length === 0) {
+    return (
+      <SafeAreaView style={styles.errorContainer}>
+        <Icon name="error-outline" type="material" size={60} color="#EF4444" />
+        <Text style={styles.errorText}>{error}</Text>
+        <Text style={styles.retryInfo}>
+          {retryCount > 0 && `Retry attempts: ${retryCount}/${MAX_RETRIES}`}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={retryFetchData}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     )
   }
@@ -227,6 +295,7 @@ const ViewDocuments = ({ navigation }) => {
       uploadedAt: documents.document_upload_time,
     }))
 
+    
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />

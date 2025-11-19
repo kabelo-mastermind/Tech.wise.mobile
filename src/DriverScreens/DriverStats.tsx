@@ -29,6 +29,7 @@ import axios from "axios"
 import { api } from "../../api"
 import { setSelectedRequest } from "../redux/actions/tripActions"
 import AllCustomAlert from "../components/AllCustomAlert"
+import LoadingScreen from "../components/LoadingScreen"; // 👈 import it
 
 const screenWidth = Dimensions.get("window").width
 
@@ -52,11 +53,11 @@ const lightChartConfig = {
 
 const DriverStats = ({ navigation, route }) => {
   // Basic state management
+  const toggleDrawer = () => setDrawerOpen(!drawerOpen)
   const [view, setView] = useState("daily")
   const [animationValue] = useState(new Animated.Value(1))
   const [isOnline, setIsOnline] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const toggleDrawer = () => setDrawerOpen(!drawerOpen)
   const state = route.params?.state ?? { newState: "offline" } // fallback if missing
   const [totalSeconds, setTotalSeconds] = useState(0)
   const [session_id, setSessionId] = useState(null) // State to store session_id
@@ -72,22 +73,28 @@ const DriverStats = ({ navigation, route }) => {
   const user_id = useSelector((state) => state.auth.user?.user_id || "")
   const profilePicture = useSelector((state) => state.auth.user?.profile_picture || "N/A")
   const [customerData, setCustomerData] = useState(null)
+
   console.log("profilePicture from redux:", profilePicture);
+
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
   const [alertType, setAlertType] = useState("info");
+  const [loadingCustomerData, setLoadingCustomerData] = useState(true);
+
   const showAlert = ({ title, message, type = "info" }) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertType(type);
     setAlertVisible(true);
   };
+
   const hideAlert = () => setAlertVisible(false);
+
   useEffect(() => {
     if (!user_id) return
     const fetchCustomer = async () => {
-
+      setLoadingCustomerData(true);
       try {
         const res = await axios.get(api + `customer/${user_id}`)
         setCustomerData(res.data)
@@ -100,12 +107,14 @@ const DriverStats = ({ navigation, route }) => {
           type: "error",
         });
       } finally {
+        setLoadingCustomerData(false);
         console.log("Customer data fetched successfully")
       }
     }
 
     fetchCustomer()
   }, [user_id])
+
   // time tracking functions (start)
   // ----------------------------------------------------------------------------
   // getting total worked time today
@@ -316,34 +325,33 @@ const DriverStats = ({ navigation, route }) => {
 
   const [loadingStats, setLoadingStats] = useState(true)
   const [errorStats, setErrorStats] = useState(null)
-const MAX_RETRIES = 3; // Limit retry attempts
-  // Fetch driver stats from the API and update them on dashboard
-  useEffect(() => {
-    let retryTimeout: NodeJS.Timeout | undefined
 
+  const MAX_RETRIES = 3; // Limit retry attempts
+  // Fetch driver stats from the API and update them on dashboard
+  // 👇 Make fetchDriverStats available at the component level
+  const fetchDriverStats = async () => {
     let retryCount = 0;
 
-  const axiosWithTimeout = async (url: string, timeout = 5000) => {
-    return Promise.race([
-      axios.get(url),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out")), timeout)
-      ),
-    ]);
-  };
+    const axiosWithTimeout = async (url: string, timeout = 5000) => {
+      return Promise.race([
+        axios.get(url),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Request timed out")), timeout)
+        ),
+      ]);
+    };
 
-  const fetchDriverStats = async () => {
-    if (!user_id || user_id === "") {
-      showAlert({
-        title: "Error",
-        message:
-          "Cannot fetch stats because your account is not recognized. Please log in again.",
-        type: "error",
-      });
-      setLoadingStats(false);
-      return;
-    }
-
+    const fetchStats = async () => {
+      if (!user_id || user_id === "") {
+        showAlert({
+          title: "Attention!",
+          message:
+            "Cannot continue because your account is not recognized. Please log in again.",
+          type: "error",
+        });
+        setLoadingStats(false);
+        return;
+      }
 
       setLoadingStats(true)
       setErrorStats(null)
@@ -458,24 +466,18 @@ const MAX_RETRIES = 3; // Limit retry attempts
 
         setLoadingStats(false);
 
-
-
         // Retry after 3 seconds
-         if (retryCount < MAX_RETRIES) {
-        retryCount++;
-        retryTimeout = setTimeout(fetchDriverStats, 3000);
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          setTimeout(fetchStats, 3000);
+        }
       }
-      }
-
     }
 
-    // Only run if user_id exists
-    if (user_id && user_id !== "") {
-      fetchDriverStats()
-    }
+    fetchStats();
+  }
 
-    return () => clearTimeout(retryTimeout)
-  }, [user_id])
+
 
   // Calculate trend percentage
   const calculateTrend = (current, previous, isRating = false) => {
@@ -832,30 +834,35 @@ const MAX_RETRIES = 3; // Limit retry attempts
     )
   }
 
-  if (loadingStats) {
-    return (
-      <View style={styles.loadingContainer}>
-        <View style={styles.logoWrapper}>
-          <ActivityIndicator
-            size={100} // bigger spinner
-            color="#0DCAF0"
-            style={styles.spinnerBehind}
-          />
-          <Image
-            source={require('../../assets/nthomeLogo.png')}
-            style={styles.logo}
-          />
-        </View>
-        <Text style={styles.loadingText_slogan}>{"Nthome ka petjana!"}</Text>
-        <Text style={styles.loadingText}>{errorStats || "Loading please wait..."}</Text>
-      </View>
 
-
-    )
-  }
 
   const currentStats = stats[view] || {} // ensures we get current selected view's stats
   const prevStats = previousStats[view] || {} // get previous stats for the same view
+
+  // Fetch driver stats from the API and update them on dashboard
+  useEffect(() => {
+    // Only run if user_id exists
+    if (user_id && user_id !== "") {
+      fetchDriverStats()
+    }
+  }, [user_id])
+
+  // 👇 Check if everything is loaded
+  const isLoading =
+    !fontsLoaded ||
+    loadingStats ||
+    loadingCustomerData;
+
+  if (loadingStats) {
+    return (
+      <LoadingScreen
+        loading={isLoading}
+        error={errorStats}
+        onRetry={fetchDriverStats} // 👈 retry fetch when button pressed
+      />
+    );
+  }
+
 
   return (
     <SafeAreaView style={styles.safeArea}>

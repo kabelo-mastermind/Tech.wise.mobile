@@ -31,6 +31,7 @@ import { useDispatch } from 'react-redux';
 import { setUser } from '../redux/actions/authActions';
 import { showToast } from "../constants/showToast"
 
+import LoadingScreen from "../components/LoadingScreen"; // 👈 import it
 
 const DriverProfile = ({ navigation }) => {
   const [customerData, setCustomerData] = useState(null)
@@ -48,6 +49,19 @@ const DriverProfile = ({ navigation }) => {
   const user = useSelector((state) => state.auth?.user)
   const user_id = user?.user_id
   const username = user?.name
+
+  // State for trips
+  const [trips, setTrips] = useState([])
+  const [totalCompletedTrips, setTotalCompletedTrips] = useState(0);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+
+  // 👇 Retry state management
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3; // Limit retry attempts
+
+  // 👇 Combined loading state for LoadingScreen
+  const isLoading = loading || loadingTrips;
+  
   // Form fields for editing
   const [formData, setFormData] = useState({
     name: "",
@@ -59,74 +73,138 @@ const DriverProfile = ({ navigation }) => {
     gender: "",
   })
 
-  // Fetch user data from Firestore and DB
-  useEffect(() => {
+  // 👇 Individual fetch functions with retry logic
+  const fetchFirestoreUser = async () => {
+    try {
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) return;
+
+      const docRef = doc(db, 'users', firebaseUser.uid);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setFirestoreData({
+          name: data.name || "",
+          email: data.email || "",
+          gender: data.gender || "",
+        });
+      } else {
+        showToast("info", "No Data", "No data found for this user.");
+      }
+    } catch (err) {
+      console.error("Failed to fetch Firestore user:", err);
+      throw new Error("Failed to fetch Firestore user data");
+    }
+  };
+
+  const fetchCustomer = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(api + `customer/${user_id}`);
+      setCustomerData(res.data);
+
+      // Initialize form data with fetched data
+      setFormData({
+        name: res.data.name || "",
+        lastName: res.data.lastName || "",
+        email: res.data.email || "",
+        phoneNumber: res.data.phoneNumber || "",
+        address: res.data.address || "",
+        current_address: res.data.current_address || "",
+        gender: res.data.gender || "",
+      });
+
+      setError(null); // Clear any previous errors
+    } catch (err) {
+      console.error("Error fetching user:", err);
+      setError("Failed to fetch user details.");
+      throw new Error("Failed to fetch customer data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTrips = async () => {
+    setLoadingTrips(true);
+    try {
+      const res = await axios.get(api + `tripHistory/${user_id}`, {
+        params: { status: 'completed' },
+      });
+
+      setTrips(res.data);
+      const totalCompleted = res.data.length;
+      setTotalCompletedTrips(totalCompleted);
+      setError(null); // Clear any previous errors
+    } catch (err) {
+      console.error("Error fetching trips:", err);
+      setError("Failed to load trip history.");
+      throw new Error("Failed to fetch trip data");
+    } finally {
+      setLoadingTrips(false);
+    }
+  };
+
+  // 👇 Main data fetching function with retry logic
+  const fetchAllData = async () => {
     if (!user_id) return;
 
-    const fetchFirestoreUser = async () => {
-      try {
-        const firebaseUser = auth.currentUser;
-        if (!firebaseUser) return;
-
-        const docRef = doc(db, 'users', firebaseUser.uid);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setFirestoreData({
-            name: data.name || "",
-            email: data.email || "",
-            gender: data.gender || "",
-          });
-        } else {
-          showToast("info", "No Data", "No data found for this user.");
-        }
-      } catch (err) {
-        // console.error("Failed to fetch Firestore user:", err);
+    try {
+      setError(null);
+      
+      // Fetch all data in parallel for better performance
+      await Promise.all([
+        fetchFirestoreUser(),
+        fetchCustomer(),
+        fetchTrips()
+      ]);
+      
+      setRetryCount(0); // Reset retry count on success
+    } catch (error) {
+      console.error("Error fetching all data:", error);
+      
+      // Check if we should retry
+      if (retryCount < MAX_RETRIES) {
+        const nextRetryCount = retryCount + 1;
+        setRetryCount(nextRetryCount);
+        
+        showToast(
+          "error", 
+          "Retrying...", 
+          `Failed to load data. Retry ${nextRetryCount}/${MAX_RETRIES}`
+        );
+        
+        // Auto-retry after 2 seconds
+        setTimeout(() => {
+          fetchAllData();
+        }, 2000);
+      } else {
+        // Max retries reached
+        setError("Unable to load profile data. Please check your connection and try again.");
         showToast(
           "error",
-          "Network Error",
-          "Failed to fetch user data. Please try again."
+          "Loading Failed",
+          "Failed to load profile after multiple attempts. Please try again."
         );
       }
-    };
+    }
+  };
 
-    fetchFirestoreUser();
-
-    const fetchCustomer = async () => {
-      setLoading(true);
-      try {
-        const res = await axios.get(api + `customer/${user_id}`);
-        setCustomerData(res.data);
-
-        // Initialize form data with fetched data
-        setFormData({
-          name: res.data.name || "",
-          lastName: res.data.lastName || "",
-          email: res.data.email || "",
-          phoneNumber: res.data.phoneNumber || "",
-          address: res.data.address || "",
-          current_address: res.data.current_address || "",
-          gender: res.data.gender || "",
-        });
-
-        // showToast("success", "Data Loaded", "user data fetched successfully!");
-      } catch (err) {
-        // console.error("Error fetching user:", err);
-        setError("Failed to fetch user details.");
-        showToast(
-          "error",
-          "user Fetch Error",
-          "Failed to fetch user details. Please try again."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCustomer();
+  // 👇 Initial data fetch
+  useEffect(() => {
+    if (user_id) {
+      fetchAllData();
+    }
   }, [user_id]);
 
+  // 👇 Manual retry function for LoadingScreen
+  const retryFetchData = () => {
+    if (retryCount >= MAX_RETRIES) {
+      // Reset retry count if max was reached
+      setRetryCount(0);
+    }
+    fetchAllData();
+  };
 
   // Handle image picking
   const pickImage = async () => {
@@ -143,7 +221,7 @@ const DriverProfile = ({ navigation }) => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Fixed: Use MediaTypeOptions.Images
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
@@ -161,7 +239,6 @@ const DriverProfile = ({ navigation }) => {
       );
     }
   };
-
 
   // Upload profile image
   const uploadProfileImage = async (imageUri) => {
@@ -185,7 +262,6 @@ const DriverProfile = ({ navigation }) => {
         'state_changed',
         null,
         (error) => {
-          // console.error("Upload error:", error);
           Alert.alert("Error", "Failed to upload profile picture.");
           setUploadingImage(false);
         },
@@ -227,7 +303,6 @@ const DriverProfile = ({ navigation }) => {
         }
       );
     } catch (error) {
-      // console.error("Upload error:", error);
       Alert.alert("Error", "Something went wrong.");
       setUploadingImage(false);
     }
@@ -281,6 +356,7 @@ const DriverProfile = ({ navigation }) => {
       setIsSaving(false);
     }
   };
+
   // Toggle edit mode
   const toggleEditMode = () => {
     setEditMode(!editMode)
@@ -330,7 +406,6 @@ const DriverProfile = ({ navigation }) => {
     }
   };
 
-
   // Handle form input changes
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({
@@ -342,61 +417,40 @@ const DriverProfile = ({ navigation }) => {
   // Get profile image source
   const getProfileImageSource = () => {
     if (customerData?.profile_picture) {
-      // Add timestamp to bust cache and force refresh
       return { uri: customerData.profile_picture + '?t=' + new Date().getTime() };
     }
-    return require("../../assets/placeholder.jpg"); // Fallback image
+    return require("../../assets/placeholder.jpg");
   }
-  // State for trips
-  const [trips, setTrips] = useState([])
-  const [totalCompletedTrips, setTotalCompletedTrips] = useState(0);
 
-
-// Fetch total trip history
-const fetchTrips = async () => {
-  try {
-    const res = await axios.get(api + `tripHistory/${user_id}`, {
-      params: { status: 'completed' },
-    });
-
-    setTrips(res.data);
-    // console.log("Fetched trips:", res.data);
-
-    // Get total completed count
-    const totalCompleted = res.data.length;
-    setTotalCompletedTrips(totalCompleted); // optional state
-  } catch (err) {
-    // console.error("Error fetching trips:", err);
-    showToast("error", "Fetch Failed", "Failed to load trip history. Please try again.");
-  }
-};
-
-
-  useEffect(() => {
-    if (user_id) {
-      fetchTrips()
-    }
-  }, [user_id])
-  if (loading) {
+  // 👇 Use LoadingScreen instead of local loading state
+  if (isLoading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0DCAF0" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </SafeAreaView>
-    )
+      <LoadingScreen
+        loading={isLoading}
+        error={error}
+        onRetry={retryFetchData}
+      />
+    );
   }
 
-  if (error) {
+  if (error && !customerData) {
     return (
       <SafeAreaView style={styles.errorContainer}>
         <Icon name="error-outline" type="material" size={60} color="#EF4444" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.retryButtonText}>Go Back</Text>
+        <Text style={styles.retryInfo}>
+          {retryCount > 0 && `Retry attempts: ${retryCount}/${MAX_RETRIES}`}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={retryFetchData}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
     )
   }
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -825,11 +879,17 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   errorText: {
-    marginTop: 16,
+    marginTop: 10,
     fontSize: 16,
     color: "#EF4444",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 10,
+  },
+    retryInfo: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 20,
+    textAlign: "center",
   },
   retryButton: {
     backgroundColor: "#0DCAF0",
@@ -855,12 +915,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#0DCAF0",
+  },
+  backButtonText: {
+    color: "#0DCAF0",
+    fontSize: 16,
+    fontWeight: "600",
   },
   headerTitle: {
     fontSize: 18,

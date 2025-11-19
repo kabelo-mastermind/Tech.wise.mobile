@@ -19,6 +19,7 @@ import { Icon } from "react-native-elements"
 import { useSelector } from "react-redux"
 import axios from "axios"
 import { api } from "../../api"
+import LoadingScreen from "../components/LoadingScreen";
 
 const { width } = Dimensions.get("window")
 
@@ -28,19 +29,28 @@ const ViewCarDetails = ({ navigation }) => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // 👇 Retry state management
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
+
   const user = useSelector((state) => state.auth.user)
   const user_id = user?.user_id || null
 
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
+  // 👇 Main fetch function with retry logic
   const fetchCarDetails = useCallback(async () => {
+    // Check if user_id is available
     if (!user_id) {
       setError("User ID not found. Please log in.")
       setLoading(false)
       return
     }
+
     try {
-      setLoading(true)
+      setError(null);
+      setLoading(true);
+
       const response = await axios.get(`${api}car_listing/user/${user_id}`)
       if (response.data && response.data.carListings && response.data.carListings.length > 0) {
         const sortedCarListings = response.data.carListings.sort((a, b) => b.id - a.id)
@@ -48,56 +58,117 @@ const ViewCarDetails = ({ navigation }) => {
       } else {
         setCarListings([])
       }
+
+      setRetryCount(0); // Reset retry count on success
     } catch (err) {
       console.error("Error fetching car details:", err)
-      setError("Failed to fetch car details. Please try again.")
-      Alert.alert("Error", "Failed to fetch car details. Please ensure your car is listed.")
+
+      // Check if we should retry
+      if (retryCount < MAX_RETRIES) {
+        const nextRetryCount = retryCount + 1;
+        setRetryCount(nextRetryCount);
+
+        // Auto-retry after 2 seconds
+        setTimeout(() => {
+          fetchCarDetails();
+        }, 2000);
+      } else {
+        // Max retries reached
+        setError("Unable to load car details. Please check your connection and try again.");
+      }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [user_id])
+  }, [user_id, retryCount])
+
+  // 👇 Manual retry function for LoadingScreen
+  const retryFetchData = () => {
+    if (retryCount >= MAX_RETRIES) {
+      setRetryCount(0);
+    }
+    fetchCarDetails();
+  };
 
   useEffect(() => {
-    fetchCarDetails()
+    if (user_id) {
+      fetchCarDetails();
+    } else {
+      // If no user_id, show error immediately
+      setError("User ID not found. Please log in.");
+      setLoading(false);
+    }
+
     const unsubscribe = navigation.addListener("focus", () => {
-      fetchCarDetails()
-    })
-    return unsubscribe
-  }, [user_id, navigation, fetchCarDetails])
+      if (user_id) {
+        fetchCarDetails();
+      }
+    });
+
+    return unsubscribe;
+  }, [user_id, navigation, fetchCarDetails]);
 
   const handleAddNewCar = () => {
     // If user has existing cars, pass the first one as template data
     if (carListings.length > 0) {
-      // Pass the most recent car as template for pre-population
       const templateCar = carListings[0];
       navigation.navigate("CarListing", { carDetails: templateCar });
     } else {
-      // No existing cars, navigate without data for fresh form
       navigation.navigate("CarListing");
     }
   }
 
+
+
+  // 👇 Use LoadingScreen for loading state
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0DCAF0" />
-        <Text style={styles.loadingText}>Loading car details...</Text>
-      </SafeAreaView>
-    )
+      <LoadingScreen
+        loading={loading}
+        error={error}
+        onRetry={retryFetchData}
+      />
+    );
   }
 
-  if (error) {
+  // 👇 Show login error screen if user_id is not found
+  if (error && !user_id) {
     return (
       <SafeAreaView style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color="#dc3545" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.retryButtonText}>Go Back</Text>
+        <Ionicons name="log-in-outline" size={60} color="#EF4444" />
+        <Text style={styles.errorText}>Please Log In</Text>
+        <Text style={styles.errorSubText}>
+          You need to be logged in to view your car details.
+        </Text>
+        {/* <TouchableOpacity style={styles.loginButton} onPress={handleGoToLogin}>
+          <Text style={styles.loginButtonText}>Go to Login</Text>
+        </TouchableOpacity> */}
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
-    )
+    );
   }
 
+  // 👇 Error state after max retries for network issues
+  if (error && user_id) {
+    return (
+      <SafeAreaView style={styles.errorContainer}>
+        <Ionicons name="alert-circle-outline" size={60} color="#EF4444" />
+        <Text style={styles.errorText}>{error}</Text>
+        <Text style={styles.retryInfo}>
+          {retryCount > 0 && `Retry attempts: ${retryCount}/${MAX_RETRIES}`}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={retryFetchData}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  // Empty state - no cars found but user is logged in
   if (carListings.length === 0) {
     return (
       <SafeAreaView style={styles.noCarContainer}>
@@ -116,12 +187,12 @@ const ViewCarDetails = ({ navigation }) => {
             style={styles.listCarButton}
             onPress={handleAddNewCar}
           >
-            <Text style={styles.listCarButtonText}>List My Car</Text>
+            <Text style={styles.listCarButtonText}>Add My Car</Text>
           </TouchableOpacity>
         </View>
         <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
       </SafeAreaView>
-    )
+    );
   }
 
   // Render individual car item for FlatList
@@ -169,8 +240,8 @@ const ViewCarDetails = ({ navigation }) => {
           </View>
         </View>
       </View>
-    )
-  }
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -200,7 +271,6 @@ const ViewCarDetails = ({ navigation }) => {
         )}
         ListFooterComponent={() => (
           <View style={styles.footerButtonsContainer}>
-            {/* Add New Car Button */}
             <TouchableOpacity style={styles.addNewCarButton} onPress={handleAddNewCar}>
               <Ionicons name="add-circle-outline" size={20} color="#fff" style={styles.addIcon} />
               <Text style={styles.addButtonText}>Add New Car</Text>
@@ -210,8 +280,8 @@ const ViewCarDetails = ({ navigation }) => {
       />
       <CustomDrawer isOpen={drawerOpen} toggleDrawer={toggleDrawer} navigation={navigation} />
     </SafeAreaView>
-  )
-}
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -229,6 +299,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6c757d",
   },
+  backButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#0DCAF0",
+    minWidth: 120,
+  },
+  backButtonText: {
+    color: "#0DCAF0",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
+  },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
@@ -242,6 +326,19 @@ const styles = StyleSheet.create({
     color: "#dc3545",
     textAlign: "center",
   },
+  errorSubText: {
+    fontSize: 16,
+    color: "#6B7280",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  retryInfo: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 20,
+    textAlign: "center",
+  },
   retryButton: {
     marginTop: 20,
     backgroundColor: "#0DCAF0",
@@ -253,6 +350,20 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  loginButton: {
+    backgroundColor: "#0DCAF0",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 10,
+    minWidth: 120,
+  },
+  loginButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
   },
   noCarContainer: {
     flex: 1,

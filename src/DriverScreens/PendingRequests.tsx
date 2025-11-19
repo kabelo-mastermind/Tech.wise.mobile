@@ -336,6 +336,7 @@ export default function PendingRequests({ navigation, route }) {
       console.error("Failed to update driver status:", error.response?.data || error.message);
     }
   };
+
   useEffect(() => {
     const onBackPress = () => {
       handleGoOffline();
@@ -348,6 +349,8 @@ export default function PendingRequests({ navigation, route }) {
     );
     return () => backHandler.remove();
   }, [handleGoOffline]);
+  
+
   // Extracting user origin and destination from tripData
   useEffect(() => {
     if (selectedRequest) {
@@ -362,6 +365,8 @@ export default function PendingRequests({ navigation, route }) {
     }
     console.log("user destination ---------------", userDestination)
   }, [selectedRequest]);
+
+
   // socket notifications
   useEffect(() => {
     if (!user_id) return
@@ -1004,7 +1009,7 @@ export default function PendingRequests({ navigation, route }) {
         )}
 
         {/* Cancel Button (Existing) */}
-        {tripStatusAccepted === "accepted" && !tripStarted && (
+        {tripStatusAccepted === "accepted" && (
           <TouchableOpacity style={styles.actionButton} onPress={handleCancelTrip}>
             <Icon type="material-community" name="close-circle" color="#FFFFFF" size={24} />
           </TouchableOpacity>
@@ -1014,7 +1019,9 @@ export default function PendingRequests({ navigation, route }) {
       {/* Start Trip Button */}
       {showStartButton &&
         tripStatusAccepted !== "on-going" &&
-        tripStatusAccepted !== "canceled" && (
+        tripStatusAccepted !== "canceled" && 
+        tripStatusAccepted !== "no-response" && 
+        (
           <TouchableOpacity
             style={[styles.commonButton, styles.startButton]}
             onPress={handleStartTrip}
