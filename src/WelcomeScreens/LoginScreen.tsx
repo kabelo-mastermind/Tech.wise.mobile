@@ -170,7 +170,7 @@ const LoginScreen = ({ navigation }) => {
         name: user.displayName,
         email: user.email,
         id: user.uid,
-        role: userData.role,
+        role: response.data.role,
         user_id: user_id,
         profile_picture: response.data.profile_picture || "N/A"
       }));

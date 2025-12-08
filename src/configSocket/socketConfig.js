@@ -221,4 +221,38 @@ export const listenToDeletedMessages = (callback) => {
   });
 };
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+// In your socketConfig.js - ADD DETAILED DEBUGGING
+export const emitOrderStatus = (orderId, status, customerId, driverId = null) => {
+  if (!socket) {
+    console.error('❌ Socket not connected');
+    return;
+  }
+
+  console.log('🔍 emitOrderStatus parameters:', {
+    orderId,
+    status,
+    customerId,
+    driverId,
+    parameterTypes: {
+      orderId: typeof orderId,
+      status: typeof status,
+      customerId: typeof customerId,
+      driverId: typeof driverId
+    }
+  });
+
+  const emitData = {
+    orderId,
+    status,
+    customerId,
+    driverId
+  };
+
+  console.log('📤 Emitting foodOrderUpdate as object:', emitData);
+
+  // Make sure we're emitting a single object
+  socket.emit('foodOrderUpdate', emitData);
+};
+
 export default socket;

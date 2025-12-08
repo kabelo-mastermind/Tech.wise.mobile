@@ -62,7 +62,9 @@ import BookingDetails from "../NthomeAir/BookingDetails";
 import FlightWelcomeScreen from "../NthomeAir/FlightWelcomeScreen";
 import TermsScreen from "../DriverScreens/TermsScreen";
 import { ActivityIndicator, View } from "react-native";
-
+import FoodDeliveryScreen from "../NthomeFood/FoodDeliveryScreen";
+import { Ionicons } from '@expo/vector-icons';
+import { useSelector } from "react-redux";
 
 const Stack = createNativeStackNavigator(); // Renaming to `Stack` for better clarity
 const Drawer = createDrawerNavigator(); // Create DrawerNavigator
@@ -70,54 +72,97 @@ const Tab = createBottomTabNavigator(); // Create BottomTabNavigator
 
 // Bottom Tab Navigator for navigating between screens
 function BottomTabNavigator() {
+  const user = useSelector((state) => state.auth.user);
+  const userRole = user?.role;
+
+  // Force the correct initial tab based on user role
+  const getInitialRouteName = () => {
+    if (userRole === "food_driver") {
+      return "FoodDelivery";
+    }
+    return "DriverStats"; // Default for other drivers
+  };
+
   return (
     <Tab.Navigator
-      initialRouteName="DriverStats" // Set the initial route to Home instead of LoginScreen
+      initialRouteName={getInitialRouteName()} // This should force the correct tab
       screenOptions={{
-        headerShown: false, // Disable header for all tab screens
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: '#e0e0e0',
+        }
       }}
     >
       <Tab.Screen
         name="Services"
         component={NthomeServicesScreen}
         options={{
-          tabBarIcon: ({ focused, size }) => (
-            <Icon
-              name="tools"
-              type="material-community"
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "grid" : "grid-outline"}
               size={size}
-              color={focused ? '#7cc' : 'gray'}
+              color={color}
             />
           ),
+          tabBarLabel: "Services",
         }}
       />
-      <Tab.Screen
-        name="DriverStats"
-        component={DriverStats}
-        options={{
-          tabBarIcon: ({ focused, size }) => (
-            <Icon
-              name="car"
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
+
+      {/* Reorder tabs so Dashboard is first when it's the initial route */}
+      {userRole !== "food_driver" && (
+        <Tab.Screen
+          name="DriverStats"
+          component={DriverStats}
+          options={{
+            tabBarIcon: ({ focused, color, size }) => (
+              <Ionicons
+                name={focused ? "stats-chart" : "stats-chart-outline"}
+                size={size}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Dashboard",
+          }}
+        />
+      )}
+
+      {userRole === "food_driver" && (
+        <Tab.Screen
+          name="FoodDelivery"
+          component={FoodDeliveryScreen}
+          options={{
+            tabBarIcon: ({ focused, color, size }) => (
+              <Ionicons
+                name={focused ? "fast-food" : "fast-food-outline"}
+                size={size}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Dashboard",
+          }}
+        />
+      )}
+
+
       <Tab.Screen
         name="Profile"
         component={DriverProfile}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="account" type="material-community" color={color} size={size} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "person" : "person-outline"}
+              size={size}
+              color={color}
+            />
           ),
+          tabBarLabel: "Profile",
         }}
       />
     </Tab.Navigator>
   );
 }
-
 // Drawer Navigator function to wrap HomeScreen with the drawer
 function DrawerNavigator() {
   return (
@@ -139,177 +184,6 @@ function DrawerNavigator() {
           ),
         }}
       />
-      {/* <Drawer.Screen
-        name="My Profile"
-        component={DriverProfile}
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="account-circle"
-              type="material-community"
-              size={size}
-              color={focused ? "#7cc" : "gray"}
-            />
-          ),
-        }}
-      />
-
-      <Drawer.Screen
-        name="Subscriptions"
-        component={Subscriptions} // Replace with appropriate component
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="credit-card" // Correct icon for payments
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
-
-      <Drawer.Screen
-        name="DriverRewards"
-        component={DriverRewards} // Replace with appropriate component
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="tag" // Correct icon for promotions
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
-
-      <Drawer.Screen
-        name="My Rides"
-        component={TripHistory} // Replace with appropriate component
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="car" // Correct icon for rides
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="Upload Documents"
-        component={UploadDocuments} // Add the Upload Documents screen
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="file-upload"
-              type="material-community"
-              size={size}
-              color={focused ? "#7cc" : "gray"}
-            />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="CarListing"
-        component={CarListing} // Replace with appropriate component
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="information" // Correct icon for about
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
-
-      <Drawer.Screen
-        name="DriverStats"
-        component={DriverStats} // Add the Upload Documents screen
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="file-upload"
-              type="material-community"
-              size={size}
-              color={focused ? "#7cc" : "gray"}
-            />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="Cards"
-        component={Wallet}
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="account-circle"
-              type="material-community"
-              size={size}
-              color={focused ? "#7cc" : "gray"}
-            />
-          ),
-        }}
-      />
-
-      <Drawer.Screen
-        name="Pending Requests"
-        component={PendingRequests} // Add the Upload Documents screen
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="file-upload"
-              type="material-community"
-              size={size}
-              color={focused ? "#7cc" : "gray"}
-            />
-          ),
-        }}
-      />
-
-
-      <Drawer.Screen
-        name="Support"
-        component={SupportScreen} // Replace with appropriate component
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="lifebuoy" // Correct icon for support
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
-
-      <Drawer.Screen
-        name="About"
-        component={AboutScreen} // Replace with appropriate component
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon
-              name="information" // Correct icon for about
-              type="material-community"
-              size={size}
-              color={focused ? '#7cc' : 'gray'}
-            />
-          ),
-        }}
-      />
-      <Drawer.Screen
-        name="LogoutPage"
-        component={LogoutPage}
-        options={{
-          drawerIcon: ({ focused, size }) => (
-            <Icon name="logout" type="material-community" size={size} color={focused ? "#7cc" : "gray"} />
-          ),
-        }}
-      /> */}
     </Drawer.Navigator>
   );
 }
@@ -326,10 +200,18 @@ const getActiveRouteName = (state) => {
 export default function RootNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState(null); // Initially null to avoid flickering
+  const user = useSelector((state) => state.auth.user);
+  const userRole = user?.role;
 
   useEffect(() => {
     const loadInitialRoute = async () => {
       try {
+        // 🍕 SPECIAL HANDLING ONLY FOR FOOD DRIVERS
+        if (userRole === "food_driver") {
+          setInitialRoute("DrawerNavigator");
+          setIsLoading(false);
+          return;
+        }
         // 1️⃣ Check if a last screen is saved
         const savedScreen = await AsyncStorage.getItem("lastScreen");
         if (savedScreen) {
@@ -393,7 +275,7 @@ export default function RootNavigator() {
 
     loadInitialRoute();
 
-     // 3️⃣ Subscribe to real-time auth changes WITH email verification check
+    // 3️⃣ Subscribe to real-time auth changes WITH email verification check
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         console.log("User is not logged in");
@@ -408,7 +290,8 @@ export default function RootNavigator() {
         // Reload user to get latest email verification status
         await user.reload();
         const currentUser = auth.currentUser;
-        
+
+
         if (currentUser && currentUser.emailVerified) {
           await AsyncStorage.setItem("userId", currentUser.uid);
           await AsyncStorage.setItem("emailVerified", "true");
@@ -573,6 +456,9 @@ export default function RootNavigator() {
         <Stack.Screen name="BookingDetails" component={BookingDetails} options={{ headerShown: false }} />
         <Stack.Screen name="BookingEdit" component={BookingEdit} options={{ headerShown: false }} />
         <Stack.Screen name="TermsScreen" component={TermsScreen} options={{ headerShown: false }} />
+
+        {/* food routes */}
+        <Stack.Screen name="FoodDelivery" component={FoodDeliveryScreen} options={{ headerShown: false }} />
 
         <Stack.Screen
           name="About"

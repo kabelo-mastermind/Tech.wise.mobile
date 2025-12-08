@@ -25,19 +25,22 @@ import { useSelector } from 'react-redux';
 import { api } from '../../api';
 
 // Firebase imports
-import { storage } from '../../firebase';
+import { storage, db } from '../../firebase';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
 const CarListing = ({ navigation }) => {
   const route = useRoute();
-  const templateCar = route.params?.carDetails || null; // Get car details if passed as template
+  const templateCar = route.params?.carDetails || null;
 
   const user = useSelector((state) => state.auth.user);
   const user_id = user?.user_id || null;
+  const user_uid = user?.id || null; // Firebase UID
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('driver'); // Default role
   const [carDetails, setCarDetails] = useState({
     car_id: null,
     carMaker: '',
@@ -49,51 +52,107 @@ const CarListing = ({ navigation }) => {
     licensePlate: '',
   });
 
-  // Determine if we're in template mode (using existing data for new car)
+  // Role selection options
+  const roleOptions = [
+    {
+      id: 'driver',
+      title: 'NthomeRidez Driver',
+      description: 'Drive passengers to their destinations',
+      icon: 'car-outline'
+    },
+    {
+      id: 'food_driver',
+      title: 'NthomeFood Driver',
+      description: 'Deliver food orders to customers',
+      icon: 'fast-food-outline'
+    }
+  ];
+
+  // Determine if we're in template mode
   const isTemplateMode = templateCar && !templateCar.id;
 
- useEffect(() => {
-  if (templateCar && templateCar.id) {
-    console.log("CarListing: Editing existing car with ID:", templateCar.id);
-    // We have an existing car with ID, so we're in edit mode
-    setCarDetails({
-      car_id: templateCar.id, // Set the car_id for updating
-      carMaker: templateCar.car_make || '',
-      carModel: templateCar.car_model || '',
-      carYear: templateCar.car_year ? String(templateCar.car_year) : '',
-      carSeats: templateCar.number_of_seats ? String(templateCar.number_of_seats) : '',
-      carColor: templateCar.car_colour || '',
-      carImage: templateCar.car_image ? { uri: templateCar.car_image } : null,
-      licensePlate: templateCar.license_plate || '',
-    });
-  } else if (templateCar) {
-    console.log("CarListing: Using template car data for pre-population (new car)");
-    // We have template data but no ID, so we're creating a new car with template data
-    setCarDetails({
-      car_id: null, // No ID for new car
-      carMaker: templateCar.car_make || '',
-      carModel: templateCar.car_model || '',
-      carYear: templateCar.car_year ? String(templateCar.car_year) : '',
-      carSeats: templateCar.number_of_seats ? String(templateCar.number_of_seats) : '',
-      carColor: templateCar.car_colour || '',
-      carImage: templateCar.car_image ? { uri: templateCar.car_image } : null,
-      licensePlate: templateCar.license_plate || '',
-    });
-  } else {
-    console.log("CarListing: Starting with empty form for new car");
-    // No template data, fresh form
-    setCarDetails({
-      car_id: null,
-      carMaker: '',
-      carModel: '',
-      carYear: '',
-      carSeats: '',
-      carColor: '',
-      carImage: null,
-      licensePlate: '',
-    });
-  }
-}, [templateCar]);
+  useEffect(() => {
+    if (templateCar && templateCar.id) {
+      console.log("CarListing: Editing existing car with ID:", templateCar.id);
+      setCarDetails({
+        car_id: templateCar.id,
+        carMaker: templateCar.car_make || '',
+        carModel: templateCar.car_model || '',
+        carYear: templateCar.car_year ? String(templateCar.car_year) : '',
+        carSeats: templateCar.number_of_seats ? String(templateCar.number_of_seats) : '',
+        carColor: templateCar.car_colour || '',
+        carImage: templateCar.car_image ? { uri: templateCar.car_image } : null,
+        licensePlate: templateCar.license_plate || '',
+      });
+    } else if (templateCar) {
+      console.log("CarListing: Using template car data for pre-population (new car)");
+      setCarDetails({
+        car_id: null,
+        carMaker: templateCar.car_make || '',
+        carModel: templateCar.car_model || '',
+        carYear: templateCar.car_year ? String(templateCar.car_year) : '',
+        carSeats: templateCar.number_of_seats ? String(templateCar.number_of_seats) : '',
+        carColor: templateCar.car_colour || '',
+        carImage: templateCar.car_image ? { uri: templateCar.car_image } : null,
+        licensePlate: templateCar.license_plate || '',
+      });
+    } else {
+      console.log("CarListing: Starting with empty form for new car");
+      setCarDetails({
+        car_id: null,
+        carMaker: '',
+        carModel: '',
+        carYear: '',
+        carSeats: '',
+        carColor: '',
+        carImage: null,
+        licensePlate: '',
+      });
+    }
+  }, [templateCar]);
+
+  // Function to update user role in Firestore and MySQL
+  const updateUserRole = async (role) => {
+    try {
+      // ✅ UPDATE FIRESTORE BY UID (SAFE & ALWAYS WORKS)
+      // if (user_uid) {
+      //   const userRef = doc(db, "users", user_uid);
+
+      //   await updateDoc(userRef, {
+      //     role: role,
+      //     updatedAt: new Date().toISOString(),
+      //   });
+
+      //   console.log("✅ Firestore role updated for UID:", user_uid);
+      // }
+
+      // -----------------------------
+      // UPDATE MYSQL (unchanged)
+      // -----------------------------
+      const updateResponse = await fetch(`${api}update-customer`, {
+        method: 'PUT',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user_id,
+          role: role
+        }),
+      });
+
+      const updateResult = await updateResponse.json();
+      if (updateResponse.ok) {
+        console.log("MySQL role updated successfully:", updateResult);
+      } else {
+        console.warn("MySQL role update warning:", updateResult.message);
+      }
+
+    } catch (error) {
+      console.log("❌ Error updating user role:", error);
+      // throw new Error("Failed to update user role");
+    }
+  };
 
   const handleImageUpload = async () => {
     try {
@@ -121,7 +180,6 @@ const CarListing = ({ navigation }) => {
     }
   };
 
-  // Helper function to extract Firebase Storage path from URL
   const getFirebaseStoragePath = (url) => {
     if (!url || !url.includes('firebasestorage.googleapis.com')) {
       return null;
@@ -139,141 +197,144 @@ const CarListing = ({ navigation }) => {
     return null;
   };
 
-const handleSubmit = async () => {
-  if (!user_id) {
-    Alert.alert("Authentication Error", "User not logged in. Please log in to list or update a car.");
-    return;
-  }
-
-  const { car_id, carMaker, carModel, carYear, carSeats, carColor, carImage, licensePlate } = carDetails;
-
-  console.log("handleSubmit: carDetails.car_id before API call:", car_id); // Debug log
-
-  // Validate all fields
-  const missingFields = [];
-  if (!carMaker) missingFields.push('Car Maker');
-  if (!carModel) missingFields.push('Car Model');
-  if (!carYear) missingFields.push('Year');
-  if (!carSeats) missingFields.push('Number of Seats');
-  if (!carColor) missingFields.push('Color');
-  if (!licensePlate) missingFields.push('License Plate');
-  if (!carImage) missingFields.push('Car Image');
-
-  if (missingFields.length > 0) {
-    Alert.alert(
-      "Missing Information",
-      `Please provide the following details:\n${missingFields.join('\n')}`,
-      [{ text: "OK" }]
-    );
-    return;
-  }
-
-  setIsSubmitting(true);
-  let imageUrlToSave = carImage?.uri;
-
-  try {
-    // Check if a new image was selected (local URI) AND if we are updating an existing car
-    if (carImage && carImage.uri && !carImage.uri.startsWith('http') && car_id) {
-      // If updating and there was an old image, delete it first
-      if (templateCar && templateCar.car_image) {
-        const oldImagePath = getFirebaseStoragePath(templateCar.car_image);
-        if (oldImagePath) {
-          try {
-            const oldImageRef = ref(storage, oldImagePath);
-            await deleteObject(oldImageRef);
-            console.log("Old image deleted from Firebase Storage:", oldImagePath);
-          } catch (deleteError) {
-            console.warn("Failed to delete old image from Firebase Storage:", deleteError);
-            // Continue with upload even if old image deletion fails
-          }
-        }
-      }
-
-      // Upload the new image
-      const response = await fetch(carImage.uri);
-      const blob = await response.blob();
-      const imageFileName = carImage.fileName || `car_image_${Date.now()}.jpg`;
-      const storageRef = ref(storage, `car_images/${user_id}/${imageFileName}`);
-      const uploadTask = uploadBytesResumable(storageRef, blob);
-
-      await new Promise((resolve, reject) => {
-        uploadTask.on(
-          "state_changed",
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log(`Upload is ${progress}% done`);
-          },
-          (error) => {
-            console.error("Image upload error:", error);
-            reject(error);
-          },
-          async () => {
-            imageUrlToSave = await getDownloadURL(uploadTask.snapshot.ref);
-            resolve();
-          }
-        );
-      });
+  const handleSubmit = async () => {
+    if (!user_id) {
+      Alert.alert("Authentication Error", "User not logged in. Please log in to list or update a car.");
+      return;
     }
 
-    const payload = {
-      userId: user_id,
-      car_make: carMaker,
-      car_model: carModel,
-      car_year: parseInt(carYear, 10),
-      number_of_seats: parseInt(carSeats, 10),
-      car_colour: carColor,
-      license_plate: licensePlate,
-      car_image: imageUrlToSave || '',
-    };
+    const { car_id, carMaker, carModel, carYear, carSeats, carColor, carImage, licensePlate } = carDetails;
 
-    // Determine if we're updating existing car or creating new one
-    const endpoint = car_id ? `${api}car_listing/${car_id}` : `${api}car_listing`;
-    const method = car_id ? 'PUT' : 'POST';
+    console.log("handleSubmit: carDetails.car_id before API call:", car_id);
+    console.log("Selected role:", selectedRole);
 
-    console.log(`Making ${method} request to: ${endpoint}`); // Debug log
+    // Validate all fields
+    const missingFields = [];
+    if (!carMaker) missingFields.push('Car Maker');
+    if (!carModel) missingFields.push('Car Model');
+    if (!carYear) missingFields.push('Year');
+    if (!carSeats) missingFields.push('Number of Seats');
+    if (!carColor) missingFields.push('Color');
+    if (!licensePlate) missingFields.push('License Plate');
+    if (!carImage) missingFields.push('Car Image');
 
-    const response = await fetch(endpoint, {
-      method,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    if (missingFields.length > 0) {
+      Alert.alert(
+        "Missing Information",
+        `Please provide the following details:\n${missingFields.join('\n')}`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
 
-    const responseText = await response.text();
-    let responseJson;
-    let errorMessage = "An unknown error occurred.";
+    setIsSubmitting(true);
+    let imageUrlToSave = carImage?.uri;
 
     try {
-      responseJson = JSON.parse(responseText);
-      if (responseJson.error) {
-        errorMessage = responseJson.error;
-      } else if (!response.ok) {
-        errorMessage = `Server responded with status ${response.status}`;
-      }
-    } catch (jsonError) {
-      console.error("JSON parsing error:", jsonError);
-      console.error("Raw server response:", responseText);
-      errorMessage = `Failed to parse server response. Raw response: ${responseText.substring(0, 100)}...`;
-    }
+      // First update the user role
+      await updateUserRole(selectedRole);
 
-    if (response.ok) {
-      Alert.alert(
-        "Success",
-        car_id ? "Your car details have been updated successfully!" : "Your car has been listed successfully!",
-        [{ text: "OK", onPress: () => navigation.goBack() }]
-      );
-    } else {
-      Alert.alert("Error", errorMessage);
+      // Then proceed with car listing/update
+      if (carImage && carImage.uri && !carImage.uri.startsWith('http') && car_id) {
+        if (templateCar && templateCar.car_image) {
+          const oldImagePath = getFirebaseStoragePath(templateCar.car_image);
+          if (oldImagePath) {
+            try {
+              const oldImageRef = ref(storage, oldImagePath);
+              await deleteObject(oldImageRef);
+              console.log("Old image deleted from Firebase Storage:", oldImagePath);
+            } catch (deleteError) {
+              console.warn("Failed to delete old image from Firebase Storage:", deleteError);
+            }
+          }
+        }
+
+        const response = await fetch(carImage.uri);
+        const blob = await response.blob();
+        const imageFileName = carImage.fileName || `car_image_${Date.now()}.jpg`;
+        const storageRef = ref(storage, `car_images/${user_id}/${imageFileName}`);
+        const uploadTask = uploadBytesResumable(storageRef, blob);
+
+        await new Promise((resolve, reject) => {
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              console.log(`Upload is ${progress}% done`);
+            },
+            (error) => {
+              console.error("Image upload error:", error);
+              reject(error);
+            },
+            async () => {
+              imageUrlToSave = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve();
+            }
+          );
+        });
+      }
+
+      const payload = {
+        userId: user_id,
+        car_make: carMaker,
+        car_model: carModel,
+        car_year: parseInt(carYear, 10),
+        number_of_seats: parseInt(carSeats, 10),
+        car_colour: carColor,
+        license_plate: licensePlate,
+        car_image: imageUrlToSave || '',
+        role: selectedRole, // Include role in car listing if needed
+      };
+
+      const endpoint = car_id ? `${api}car_listing/${car_id}` : `${api}car_listing`;
+      const method = car_id ? 'PUT' : 'POST';
+
+      console.log(`Making ${method} request to: ${endpoint}`);
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const responseText = await response.text();
+      let responseJson;
+      let errorMessage = "An unknown error occurred.";
+
+      try {
+        responseJson = JSON.parse(responseText);
+        if (responseJson.error) {
+          errorMessage = responseJson.error;
+        } else if (!response.ok) {
+          errorMessage = `Server responded with status ${response.status}`;
+        }
+      } catch (jsonError) {
+        console.error("JSON parsing error:", jsonError);
+        console.error("Raw server response:", responseText);
+        errorMessage = `Failed to parse server response. Raw response: ${responseText.substring(0, 100)}...`;
+      }
+
+      if (response.ok) {
+        Alert.alert(
+          "Success",
+          car_id
+            ? "Your car details have been updated successfully!"
+            : `Your car has been listed successfully! You are now a ${selectedRole === 'food_driver' ? 'Food Delivery Driver' : 'Normal Driver'}.`,
+          [{ text: "OK", onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert("Error", errorMessage);
+      }
+    } catch (error) {
+      console.error("Submission error:", error);
+      Alert.alert("Error", "Failed to submit car details. Please check your connection or try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-  } catch (error) {
-    console.error("Submission error:", error);
-    Alert.alert("Error", "Failed to submit car details. Please check your connection or try again.");
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   const inputFields = [
     {
@@ -325,10 +386,10 @@ const handleSubmit = async () => {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
 
-const isEditing = templateCar && templateCar.id;
-const headerTitle = isEditing ? "Edit Car Details" : "Upload Car Details";
-const submitButtonText = isEditing ? "Update Car Details" : "List My Car";
- 
+  const isEditing = templateCar && templateCar.id;
+  const headerTitle = isEditing ? "Edit Car Details" : "Upload Car Details";
+  const submitButtonText = isEditing ? "Update Car Details" : "List My Car";
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0DCAF0" />
@@ -359,6 +420,55 @@ const submitButtonText = isEditing ? "Update Car Details" : "List My Car";
               </Text>
             )}
           </View>
+
+          {/* Role Selection */}
+          <View style={styles.roleSelectionContainer}>
+            <Text style={styles.roleSelectionTitle}>Select Your Driver Role</Text>
+            <Text style={styles.roleSelectionSubtitle}>
+              Choose the type of service you want to provide
+            </Text>
+
+            <View style={styles.roleOptionsContainer}>
+              {roleOptions.map((role) => (
+                <TouchableOpacity
+                  key={role.id}
+                  style={[
+                    styles.roleOption,
+                    selectedRole === role.id && styles.roleOptionSelected
+                  ]}
+                  onPress={() => setSelectedRole(role.id)}
+                >
+                  <View style={styles.roleOptionHeader}>
+                    <Ionicons
+                      name={role.icon}
+                      size={24}
+                      color={selectedRole === role.id ? '#0DCAF0' : '#6c757d'}
+                    />
+                    <Text style={[
+                      styles.roleOptionTitle,
+                      selectedRole === role.id && styles.roleOptionTitleSelected
+                    ]}>
+                      {role.title}
+                    </Text>
+                  </View>
+                  <Text style={styles.roleOptionDescription}>
+                    {role.description}
+                  </Text>
+
+                  {/* Selection indicator */}
+                  <View style={[
+                    styles.radioButton,
+                    selectedRole === role.id && styles.radioButtonSelected
+                  ]}>
+                    {selectedRole === role.id && (
+                      <View style={styles.radioButtonInner} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Form Fields */}
           <View style={styles.formContainer}>
             {inputFields.map((field) => (
@@ -490,6 +600,87 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
   },
+  // Role Selection Styles
+  roleSelectionContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  roleSelectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginBottom: 4,
+  },
+  roleSelectionSubtitle: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginBottom: 16,
+  },
+  roleOptionsContainer: {
+    gap: 12,
+  },
+  roleOption: {
+    borderWidth: 2,
+    borderColor: '#e9ecef',
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: '#fff',
+    position: 'relative',
+  },
+  roleOptionSelected: {
+    borderColor: '#0DCAF0',
+    backgroundColor: '#f8fdff',
+  },
+  roleOptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  roleOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#495057',
+    marginLeft: 12,
+  },
+  roleOptionTitleSelected: {
+    color: '#0DCAF0',
+  },
+  roleOptionDescription: {
+    fontSize: 14,
+    color: '#6c757d',
+    lineHeight: 18,
+    paddingLeft: 36,
+  },
+  radioButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#dee2e6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioButtonSelected: {
+    borderColor: '#0DCAF0',
+  },
+  radioButtonInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#0DCAF0',
+  },
+  // Existing styles remain the same...
   formContainer: {
     backgroundColor: '#fff',
     borderRadius: 16,

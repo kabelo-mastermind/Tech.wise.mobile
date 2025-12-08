@@ -23,6 +23,9 @@ interface CustomDrawerProps {
 
 const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navigation }) => {
   const user = useSelector((state) => state.auth.user)
+  const userRole = user?.role
+
+  console.log("%%%%%%%%%%%", userRole);
 
   const drawerWidth = 280
 
@@ -42,40 +45,40 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
     animateDrawer()
   }, [isOpen, animateDrawer])
 
-  const [customerRating, setRating] = useState(null) 
+  const [customerRating, setRating] = useState(null)
 
   // Fetch driver rating from the server
   useEffect(() => {
     if (!user_id) return // Ensure user_id is available before making the request
 
     const fetchCustomerRating = async () => {
-     try {
-  const res = await axios.get(`${api}/tripHistory/${user_id}`, {
-    params: {
-      driverId: user_id, // pass the driver's ID here
-    },
-  });
+      try {
+        const res = await axios.get(`${api}/tripHistory/${user_id}`, {
+          params: {
+            driverId: user_id, // pass the driver's ID here
+          },
+        });
 
-  const trips = res.data;
+        const trips = res.data;
 
-  // Filter out null, undefined, or 0 ratings
-  const ratedTrips = trips.filter(
-    (trip) => trip.driver_ratings !== null && Number(trip.driver_ratings) > 0
-  );
+        // Filter out null, undefined, or 0 ratings
+        const ratedTrips = trips.filter(
+          (trip) => trip.driver_ratings !== null && Number(trip.driver_ratings) > 0
+        );
 
-  if (ratedTrips.length > 0) {
-    const total = ratedTrips.reduce(
-      (sum, trip) => sum + Number.parseFloat(trip.driver_ratings),
-      0
-    );
-    const avg = total / ratedTrips.length;
-    setRating(avg.toFixed(1)); // optional: round to 1 decimal
-  } else {
-    setRating(0); // match SQL’s "0" default
-  }
-} catch (err) {
-  console.log("Error fetching customer rating:", err);
-}
+        if (ratedTrips.length > 0) {
+          const total = ratedTrips.reduce(
+            (sum, trip) => sum + Number.parseFloat(trip.driver_ratings),
+            0
+          );
+          const avg = total / ratedTrips.length;
+          setRating(avg.toFixed(1)); // optional: round to 1 decimal
+        } else {
+          setRating(0); // match SQL’s "0" default
+        }
+      } catch (err) {
+        console.log("Error fetching customer rating:", err);
+      }
     }
 
     fetchCustomerRating()
@@ -116,6 +119,15 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
     )
   }
 
+  // Function to handle dashboard navigation based on role
+  const handleDashboardNavigation = () => {
+    if (userRole === "food_driver") {
+      navigation.navigate("FoodDelivery")
+    } else {
+      navigation.navigate("DriverStats")
+    }
+  }
+
   return (
     <>
       {isOpen && (
@@ -138,7 +150,7 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
             <View style={styles.profileContainer}>
               <View style={styles.avatarContainer}>
                 <Image
-                  source={ require('../../assets/nthomeLogo.png')}
+                  source={require('../../assets/nthomeLogo.png')}
                   style={styles.avatarImage}
                 />
               </View>
@@ -177,7 +189,7 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
 
           {/* Menu Items */}
           <View style={styles.menuSection}>
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("DriverStats")}>
+            <TouchableOpacity style={styles.menuItem} onPress={handleDashboardNavigation}>
               <View style={styles.menuIconContainer}>
                 <Icon name="view-dashboard" size={20} color={ACCENT} />
               </View>
@@ -208,15 +220,15 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
               <Text style={styles.menuText}>Driver Rewards</Text>
               <Icon name="chevron-right" size={16} color="#C4C4C4" />
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("My Rides")}>
-              <View style={styles.menuIconContainer}>
-                <Icon name="car" size={20} color="#666666" />
-              </View>
-              <Text style={styles.menuText}>My Rides</Text>
-              <Icon name="chevron-right" size={16} color="#C4C4C4" />
-            </TouchableOpacity>
-
+            {userRole !== "food_driver" && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("My Rides")}>
+                <View style={styles.menuIconContainer}>
+                  <Icon name="car" size={20} color="#666666" />
+                </View>
+                <Text style={styles.menuText}>My Rides</Text>
+                <Icon name="chevron-right" size={16} color="#C4C4C4" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("ViewDocuments")}>
               <View style={styles.menuIconContainer}>
                 <Icon name="file-upload" size={20} color="#666666" />
@@ -232,15 +244,16 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
               <Text style={styles.menuText}>View Car Documents</Text>
               <Icon name="chevron-right" size={16} color="#C4C4C4" />
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("NthomeServicesScreen")}>
-              <View style={styles.menuIconContainer}>
-                <Icon name="wrench" size={20} color="#666666" />
-              </View>
-              <Text style={styles.menuText}>Services</Text>
-              <Icon name="chevron-right" size={16} color="#C4C4C4" />
-            </TouchableOpacity>
-
+            {/* Hide Services for food drivers */}
+            {userRole !== "food_driver" && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("NthomeServicesScreen")}>
+                <View style={styles.menuIconContainer}>
+                  <Icon name="wrench" size={20} color="#666666" />
+                </View>
+                <Text style={styles.menuText}>Services</Text>
+                <Icon name="chevron-right" size={16} color="#C4C4C4" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("Support")}>
               <View style={styles.menuIconContainer}>
                 <Icon name="lifebuoy" size={20} color="#666666" />

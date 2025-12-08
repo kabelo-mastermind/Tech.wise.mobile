@@ -265,7 +265,7 @@ const ViewCarDetails = ({ navigation }) => {
               • Below are your current car listings
             </Text>
             <Text style={styles.instructionsText}>
-              • To add another car, tap the "Add New Car" button below
+              • To add a car, tap the "Add/Edit Car" button below
             </Text>
           </View>
         )}
@@ -273,7 +273,7 @@ const ViewCarDetails = ({ navigation }) => {
           <View style={styles.footerButtonsContainer}>
             <TouchableOpacity style={styles.addNewCarButton} onPress={handleAddNewCar}>
               <Ionicons name="add-circle-outline" size={20} color="#fff" style={styles.addIcon} />
-              <Text style={styles.addButtonText}>Add New Car</Text>
+              <Text style={styles.addButtonText}>Add/Edit Car</Text>
             </TouchableOpacity>
           </View>
         )}
