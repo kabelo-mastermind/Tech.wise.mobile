@@ -1006,7 +1006,7 @@ const DriverStats = ({ navigation, route }) => {
               </View>
             </View>
 
-            <View style={styles.chartCard}>
+            {/* <View style={styles.chartCard}>
               <Text style={styles.chartTitle}>Earnings Trend</Text>
               <ScrollView
                 horizontal={true}
@@ -1038,9 +1038,9 @@ const DriverStats = ({ navigation, route }) => {
                   style={styles.chart}
                 />
               </ScrollView>
-            </View>
+            </View> */}
 
-            <View style={styles.chartCard}>
+            {/* <View style={styles.chartCard}>
               <Text style={styles.chartTitle}>Device Traffic</Text>
               <ScrollView
                 horizontal={true}
@@ -1067,7 +1067,7 @@ const DriverStats = ({ navigation, route }) => {
                   style={styles.chart}
                 />
               </ScrollView>
-            </View>
+            </View> */}
           </>
         ) : (
           <View style={styles.uploadDocumentsContainer}>
