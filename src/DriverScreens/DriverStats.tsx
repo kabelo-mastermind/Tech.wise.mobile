@@ -117,18 +117,36 @@ const DriverStats = ({ navigation, route }) => {
 
   // time tracking functions (start)
   // ----------------------------------------------------------------------------
-  // getting total worked time today
-  useEffect(() => {
-    if (!user_id) {
-      console.log("User is not logged in or user_id is missing, skipping total worked today fetch")
-      return
-    }
+// getting total worked time today
+useEffect(() => {
+  if (!user_id) {
+    console.log("User is not logged in or user_id is missing, skipping total worked today fetch")
+    return
+  }
 
-    axios
-      .get(api + `driver/totalWorkedToday/${user_id}`)
-      .then((res) => setTotalSeconds(res.data.totalSeconds))
-      .catch((err) => console.error(err))
-  }, [user_id, state])
+  axios
+    .get(api + `driver/totalWorkedToday/${user_id}`)
+    .then((res) => {
+      const dbValue = res.data.totalSeconds;
+      const MAX_TIME_PER_DAY_SECONDS = 12 * 60 * 60;
+      
+      // Interpret the value
+      let timeLeft;
+      if (dbValue < 0) {
+        // Negative = time left (absolute value)
+        timeLeft = Math.abs(dbValue);
+      } else if (dbValue > MAX_TIME_PER_DAY_SECONDS) {
+        // If it's impossibly large, cap it
+        timeLeft = 0;
+      } else {
+        // Positive = time worked, calculate time left
+        timeLeft = Math.max(0, MAX_TIME_PER_DAY_SECONDS - dbValue);
+      }
+      
+      setTotalSeconds(timeLeft); // This should be time left
+    })
+    .catch((err) => console.error(err))
+}, [user_id, state])
 
   console.log("Total worked time today:", totalSeconds)
 
@@ -1339,7 +1357,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 50,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
