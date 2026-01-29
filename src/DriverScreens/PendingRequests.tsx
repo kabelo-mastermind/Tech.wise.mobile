@@ -403,12 +403,12 @@ export default function PendingRequests({ navigation, route }) {
     })
     console.log("Trip Request Socket Data::::::::::::::::::::", tripRequestSocket);
 
-    listenCancelTrip((tripData) => {
-      setUserOrigin({ latitude: null, longitude: null });
-      setUserDestination({ latitude: null, longitude: null })
-      handleUpdateDriverState()
-      setShowCancelAlert(true); // show alert
-    });
+  listenCancelTrip((tripData) => {
+  // Clear all state when trip is canceled
+  clearTripState();
+  handleUpdateDriverState();
+  setShowCancelAlert(true);
+});
 
     listenToChatMessages((messageData) => {
       // Increment notification count
@@ -604,52 +604,46 @@ export default function PendingRequests({ navigation, route }) {
     return () => clearInterval(intervalId) // Cleanup interval on unmount
   }, [user_id])
 
-  const handleCancel = async (reason) => {
-    setCancelReason(reason)
-    // console.log("Trip Cancelled for reason:", tripRequestSocket?.id);
-    setShowStartButton(false);
-    // Assuming you have the tripId, cancel_by (user ID or admin), and distance_traveled (if applicable)
-    const tripId = selectedRequest?.id // Replace with the actual trip ID you want to cancel
-    const distanceTraveled = null // Replace with the actual distance if relevant
+const handleCancel = async (reason) => {
+  setCancelReason(reason);
+  const tripId = selectedRequest?.id;
+  
+  try {
+    const response = await fetch(`${api}trips/${tripId}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "canceled",
+        cancellation_reason: reason,
+        cancel_by: "customer",
+        distance_traveled: null,
+      }),
+    });
 
-    try {
-      const response = await fetch(`${api}trips/${tripId}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "canceled",
-          cancellation_reason: reason,
-          cancel_by: "customer",
-          distance_traveled: distanceTraveled,
-        }),
-      })
-
-      const responseData = await response.json()
-      console.log("Response:", responseData)
-
-      if (response.ok) {
-        console.log("Trip successfully canceled.")
-        // Stop background tracking if it was active
-        if (isBackgroundTrackingActive) {
-          await stopBackgroundLocationTracking();
-        }
-
-        setUserOrigin({ latitude: null, longitude: null })
-        setUserDestination({ latitude: null, longitude: null })
-        emitCancelTrip(tripId, selectedRequest.customerId)
-        setShowStartButton(false);
-        dispatch(clearMessages());
-        handleUpdateDriverState()
-
-        //  navigation.navigate("PendingRequests")// it causes re rendering
-      } else {
-        console.log("Failed to update trip:", responseData.message)
-        alert(responseData.message || "Error updating trip status, try again later.")
+    if (response.ok) {
+      // Stop background tracking
+      if (isBackgroundTrackingActive) {
+        await stopBackgroundLocationTracking();
       }
-    } catch (error) {
-      console.error("Error canceling the trip:", error)
+      
+      // Clear ALL state
+      clearTripState();
+      
+      // Clear Redux messages
+      dispatch(clearMessages());
+      
+      // Notify customer
+      emitCancelTrip(tripId, selectedRequest.customerId);
+      
+      // Update driver state
+      handleUpdateDriverState();
+      
+      setCancelModalVisible(false);
     }
+  } catch (error) {
+    console.error("Error canceling trip:", error);
   }
+};
 
   //if trip is declined it should reset user origin
   useEffect(() => {
@@ -818,7 +812,7 @@ export default function PendingRequests({ navigation, route }) {
   const handleStartTrip = async () => {
     try {
       // 1️⃣ Update trip status
-      const response = await fetch(`${api}trips/${tripData.id}/status`, {
+      const response = await fetch(`${api}trips/${tripData?.id}/status`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -870,57 +864,47 @@ export default function PendingRequests({ navigation, route }) {
   const [ratingTripId, setRatingTripId] = useState(null);
   const [ratingUserId, setRatingUserId] = useState(null);
 
+
+  
   //update trip and notify customer when driver clicks end trip
 
-  const handleEndRide = async () => {
-    try {
-      if (!tripData?.id) return;
+const handleEndRide = async () => {
+  try {
+    if (!tripData?.id) return;
 
-      const response = await fetch(`${api}trips/${tripData.id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "completed",
-          distance_traveled: distance,
-        }),
-      });
+    const response = await fetch(`${api}trips/${tripData.id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "completed",
+        distance_traveled: distance,
+      }),
+    });
 
-      if (!response.ok) throw new Error("Error updating trip status");
-      // Stop background location tracking
-      await stopBackgroundLocationTracking();
-
-      handleUpdateDriverState();
-      emitEndTrip(tripData.id, tripData.customerId);
-
-      // Clear UI
-      setTripStarted(false);
-      setUserOrigin({ latitude: null, longitude: null });
-      setUserDestination({ latitude: null, longitude: null });
-      setShowStartButton(false);
-      setShowEndButton(false);
-      dispatch(clearMessages());
-      setEta("N/A");
-      setDistance("N/A");
-      setDistanceTraveld("N/A");
-      setTripRequest(null);
-
-      if (mapRef?.current) {
-        mapRef.current.animateToRegion({
-          latitude: driverLocation.latitude,
-          longitude: driverLocation.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        });
-      }
-
-      // ✅ Open rating modal
-      setRatingTripId(tripData.id);
-      setRatingUserId(tripData.driverId);
-      setShowRating(true);
-    } catch (error) {
-      console.error("Error ending trip:", error);
-    }
-  };
+    if (!response.ok) throw new Error("Error updating trip status");
+    
+    // Stop background tracking
+    await stopBackgroundLocationTracking();
+    
+    // Clear ALL state BEFORE navigation
+    clearTripState();
+    
+    // Clear Redux messages
+    dispatch(clearMessages());
+    
+    // Update driver state and notify
+    handleUpdateDriverState();
+    emitEndTrip(tripData.id, tripData.customerId);
+    
+    // Open rating modal
+    setRatingTripId(tripData.id);
+    setRatingUserId(tripData.driverId);
+    setShowRating(true);
+    
+  } catch (error) {
+    console.error("Error ending trip:", error);
+  }
+};
   // console.log("Trip successfully ended.", tripData.id, tripData.driverId);
 
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -939,8 +923,24 @@ export default function PendingRequests({ navigation, route }) {
     setModalVisible(true);
   }
 
+  const clearTripState = () => {
+  setTripStarted(false);
+  setTripRequest(null);
+  setShowStartButton(false);
+  setShowEndButton(false);
+  setEta("N/A");
+  setDistance("N/A");
+  setDistanceTraveld("N/A");
+  setUserOrigin({ latitude: null, longitude: null });
+  setUserDestination({ latitude: null, longitude: null });
+  
+
+  }
   return (
+
+    
     <SafeAreaView style={styles.container}>
+      
       {/* Header */}
       {/* <View style={styles.header}>
             <TouchableOpacity onPress={toggleDrawer} style={styles.menuButton}>
@@ -1041,32 +1041,32 @@ export default function PendingRequests({ navigation, route }) {
       )}
 
       {/* Navigation Buttons - Only show when trip is accepted but not completed */}
-      {(tripStatusAccepted === "accepted" || tripStarted) && (
-        <View style={styles.navButtonsContainer}>
-          <TouchableOpacity
-            style={[styles.navButton, styles.googleButton]}
-            onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
-          >
-            <Ionicons name="logo-google" size={20} color="white" />
-            <Text style={styles.navButtonText}>Maps</Text>
-          </TouchableOpacity>
+{(tripStatusAccepted === "accepted" || tripStarted) && (
+  <View style={styles.navButtonsContainer}>
+    <TouchableOpacity
+      style={[styles.navButton, styles.googleButton]}
+      onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
+    >
+      <Ionicons name="logo-google" size={20} color="white" />
+      <Text style={styles.navButtonText}>Maps</Text>
+    </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.customerNav, styles.customerButton]}
-            onPress={() => handleViewCustomer()}
-          >
-            <Ionicons name="person" size={20} color="white" />
-          </TouchableOpacity>
+    <TouchableOpacity
+      style={[styles.customerNav, styles.customerButton]}
+      onPress={() => handleViewCustomer()}
+    >
+      <Ionicons name="person" size={20} color="white" />
+    </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.navButton, styles.wazeButton]}
-            onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
-          >
-            <Ionicons name="car-sport" size={20} color="white" />
-            <Text style={styles.navButtonText}>Waze</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+    <TouchableOpacity
+      style={[styles.navButton, styles.wazeButton]}
+      onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
+    >
+      <Ionicons name="car-sport" size={20} color="white" />
+      <Text style={styles.navButtonText}>Waze</Text>
+    </TouchableOpacity>
+  </View>
+)}
 
 
       {/* Trip Cancellation Modal */}

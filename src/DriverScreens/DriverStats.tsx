@@ -52,6 +52,7 @@ const lightChartConfig = {
 }
 
 const DriverStats = ({ navigation, route }) => {
+  
   // Basic state management
   const toggleDrawer = () => setDrawerOpen(!drawerOpen)
   const [view, setView] = useState("daily")
@@ -81,15 +82,22 @@ const DriverStats = ({ navigation, route }) => {
   const [alertMessage, setAlertMessage] = useState("");
   const [alertType, setAlertType] = useState("info");
   const [loadingCustomerData, setLoadingCustomerData] = useState(true);
+  const [alertOnConfirm, setAlertOnConfirm] = useState(null);
 
-  const showAlert = ({ title, message, type = "info" }) => {
+  const showAlert = ({ title, message, type = "info", onConfirm = null }) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertType(type);
+    setAlertOnConfirm(() => onConfirm);
     setAlertVisible(true);
   };
 
-  const hideAlert = () => setAlertVisible(false);
+  const hideAlert = () => {
+    setAlertVisible(false);
+    if (alertOnConfirm) {
+      alertOnConfirm();
+    }
+  };
 
   useEffect(() => {
     if (!user_id) return
@@ -130,20 +138,20 @@ useEffect(() => {
       const dbValue = res.data.totalSeconds;
       const MAX_TIME_PER_DAY_SECONDS = 12 * 60 * 60;
       
-      // Interpret the value
-      let timeLeft;
+      // Store the actual time worked (dbValue is time worked)
+      let timeWorked;
       if (dbValue < 0) {
-        // Negative = time left (absolute value)
-        timeLeft = Math.abs(dbValue);
+        // If negative, treat as 0 worked
+        timeWorked = 0;
       } else if (dbValue > MAX_TIME_PER_DAY_SECONDS) {
-        // If it's impossibly large, cap it
-        timeLeft = 0;
+        // If exceeds limit, cap at max
+        timeWorked = MAX_TIME_PER_DAY_SECONDS;
       } else {
-        // Positive = time worked, calculate time left
-        timeLeft = Math.max(0, MAX_TIME_PER_DAY_SECONDS - dbValue);
+        // Use the actual value
+        timeWorked = dbValue;
       }
       
-      setTotalSeconds(timeLeft); // This should be time left
+      setTotalSeconds(timeWorked); // Store actual time worked
     })
     .catch((err) => console.error(err))
 }, [user_id, state])
@@ -364,7 +372,7 @@ useEffect(() => {
         showAlert({
           title: "Attention!",
           message:
-            "Cannot continue because your account is not recognized. Please log in again.",
+                  "Cannot continue because your account is not recognized. Please log out and log in again.",
           type: "error",
         });
         setLoadingStats(false);

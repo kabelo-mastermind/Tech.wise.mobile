@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from "react"
 import { StyleSheet, View, Image, Text, Animated, TouchableOpacity } from "react-native"
 import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps"
 import MapViewDirections from "react-native-maps-directions"
@@ -216,12 +216,14 @@ const MapComponent = ({
   const [routeProgress, setRouteProgress] = useState(0)
   const [cameraMode, setCameraMode] = useState(CAMERA_MODES.FOLLOW)
   const [isUserInteracting, setIsUserInteracting] = useState(false)
+  const [routeError, setRouteError] = useState(null)
 
   // Smooth animation refs
   const smoothMarkerPosition = useRef(new Animated.ValueXY()).current
   const markerScaleAnim = useRef(new Animated.Value(1)).current
   const pulseAnim = useRef(new Animated.Value(1)).current
   const lastUpdateTime = useRef(Date.now())
+  const userInteractionTimeout = useRef(null)
 
   // Use tripStart directly instead of local state
   const tripStarted = tripStart;
@@ -299,12 +301,21 @@ const MapComponent = ({
         driverLocation.longitude
       );
 
-      // Only update bearing if movement is significant (more than 2 meters)
-      if (distanceMoved > 2) {
-        const bearing = calculateCurrentBearing(prevDriverLocation, driverLocation);
-        setMarkerBearing(bearing);
-        setDriverHeading(bearing);
+      // Get bearing from polyline (like Waze/Google Maps) or from movement
+      let bearing;
+      if (polylineCoords.length > 0) {
+        // Use polyline direction for more accurate heading (Waze/Google Maps style)
+        bearing = getRouteDirection(driverLocation, polylineCoords, 100);
+      } else if (distanceMoved > 2) {
+        // Fallback to movement-based bearing
+        bearing = calculateCurrentBearing(prevDriverLocation, driverLocation);
+      } else {
+        // No movement, keep current bearing
+        bearing = markerBearing;
       }
+
+      setMarkerBearing(bearing);
+      setDriverHeading(bearing);
 
       if (timeDiff > 1000) {
         const speed = calculateSpeed(prevDriverLocation, driverLocation, timeDiff);
@@ -322,7 +333,7 @@ const MapComponent = ({
     if (driverLocation) {
       setPrevDriverLocation(driverLocation);
     }
-  }, [driverLocation, prevDriverLocation, polylineCoords]);
+  }, [driverLocation, polylineCoords]);
 
   // Use external speed if provided
   useEffect(() => {
@@ -347,60 +358,63 @@ const MapComponent = ({
     }
   }, [driverLocation, currentMarkerCoordinate, animateMarkerToPosition]);
 
-  // Improved camera animation with different modes
-  useEffect(() => {
-    if (!mapRef?.current || !driverLocation || !mapReady || isUserInteracting) return;
+  // Memoize the target center and heading calculation
+  const cameraTarget = useMemo(() => {
+    if (!driverLocation || !mapReady || isUserInteracting) return null;
 
     let targetCenter = driverLocation;
     let targetHeading = 0;
-    let zoomLevel = getZoomLevel(currentSpeed);
 
-    switch (cameraMode) {
-      case CAMERA_MODES.FOLLOW:
-        const directionToPointUp = polylineCoords.length > 0
-          ? getRouteDirection(driverLocation, polylineCoords)
-          : driverHeading;
-        targetHeading = normalizeAngle(360 - directionToPointUp);
-        const offsetDistanceMeters = 50;
-        targetCenter = getCoordinateAtDistanceAndBearing(
-          driverLocation,
-          offsetDistanceMeters,
-          directionToPointUp
-        );
-        break;
-
-      case CAMERA_MODES.OVERVIEW:
-        // Show entire route if we have polyline coordinates
-        if (polylineCoords.length > 0) {
-          const coordinates = [driverLocation, ...polylineCoords];
-          mapRef.current.fitToCoordinates(coordinates, {
-            edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
-            animated: true,
-          });
-          return; // fitToCoordinates handles the animation
-        }
-        break;
-
-      case CAMERA_MODES.NORTH_UP:
-        targetHeading = 0; // North always up
-        zoomLevel = 0.005; // Fixed zoom level
-        break;
-    }
-
-    if (cameraMode !== CAMERA_MODES.OVERVIEW) {
-      mapRef.current.animateCamera(
-        {
-          center: targetCenter,
-          heading: targetHeading,
-          latitudeDelta: zoomLevel,
-          longitudeDelta: zoomLevel,
-          pitch: 0,
-        },
-        { duration: 1000 }
+    if (cameraMode === CAMERA_MODES.FOLLOW) {
+      const directionToPointUp = polylineCoords.length > 0
+        ? getRouteDirection(driverLocation, polylineCoords, 100)
+        : driverHeading;
+      
+      targetHeading = normalizeAngle(directionToPointUp);
+      const offsetDistanceMeters = 80;
+      targetCenter = getCoordinateAtDistanceAndBearing(
+        driverLocation,
+        offsetDistanceMeters,
+        directionToPointUp
       );
-      setMapCameraHeading(targetHeading);
+    } else if (cameraMode === CAMERA_MODES.NORTH_UP) {
+      targetCenter = driverLocation;
+      targetHeading = 0;
     }
-  }, [driverLocation, polylineCoords, mapReady, driverHeading, mapRef, currentSpeed, cameraMode, isUserInteracting]);
+
+    return { targetCenter, targetHeading };
+  }, [driverLocation, cameraMode, polylineCoords, driverHeading, mapReady, isUserInteracting]);
+
+  // Improved camera animation with different modes
+  useEffect(() => {
+    if (!mapRef?.current || !cameraTarget || cameraMode === CAMERA_MODES.OVERVIEW) return;
+
+    const { targetCenter, targetHeading } = cameraTarget;
+    const zoomLevel = getZoomLevel(currentSpeed);
+
+    mapRef.current.animateCamera(
+      {
+        center: targetCenter,
+        heading: targetHeading,
+        latitudeDelta: zoomLevel,
+        longitudeDelta: zoomLevel,
+        pitch: 0,
+      },
+      { duration: 500 }
+    );
+    setMapCameraHeading(targetHeading);
+  }, [cameraTarget, cameraMode, currentSpeed, mapRef]);
+
+  // Handle overview mode separately
+  useEffect(() => {
+    if (!mapRef?.current || cameraMode !== CAMERA_MODES.OVERVIEW || polylineCoords.length === 0 || !driverLocation) return;
+
+    const coordinates = [driverLocation, ...polylineCoords];
+    mapRef.current.fitToCoordinates(coordinates, {
+      edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
+      animated: true,
+    });
+  }, [cameraMode, polylineCoords, driverLocation]);
 
   // Reset trip data when trip ends
   useEffect(() => {
@@ -422,7 +436,21 @@ const MapComponent = ({
   };
 
   const handleRegionChangeComplete = async (region, details) => {
-    setIsUserInteracting(details?.isGesture || false);
+    // Set user interacting flag if it's a gesture
+    if (details?.isGesture) {
+      setIsUserInteracting(true);
+      
+      // Clear any existing timeout
+      if (userInteractionTimeout.current) {
+        clearTimeout(userInteractionTimeout.current);
+      }
+      
+      // Reset flag after user stops dragging (1 second of inactivity)
+      userInteractionTimeout.current = setTimeout(() => {
+        setIsUserInteracting(false);
+        userInteractionTimeout.current = null;
+      }, 1000);
+    }
 
     try {
       if (mapRef?.current && mapRef.current.getCamera) {
@@ -435,6 +463,14 @@ const MapComponent = ({
   };
 
   const handleDirectionsReady = (result) => {
+    console.log("✅ DIRECTIONS READY:", {
+      distance: result.distance,
+      duration: result.duration,
+      coordinatesCount: result.coordinates?.length,
+      legs: result.legs?.length,
+      hasSteps: !!result.legs?.[0]?.steps,
+    });
+
     if (result.distance > 0 && result.duration > 0) {
       setDistance(result.distance.toFixed(2));
       setDuration(result.duration.toFixed(2));
@@ -443,6 +479,7 @@ const MapComponent = ({
       setInstructions(result.legs[0].steps);
     }
     if (result.coordinates?.length > 0) {
+      console.log("✅ POLYLINE SET:", result.coordinates.length, "points");
       setPolylineCoords(result.coordinates);
     }
     centerMap();
@@ -452,6 +489,19 @@ const MapComponent = ({
     centerMap();
     setCameraMode(CAMERA_MODES.FOLLOW);
     setIsUserInteracting(false);
+  };
+
+  const handleDirectionsError = (error) => {
+    console.error("❌ DIRECTIONS ERROR:", {
+      message: error?.message,
+      code: error?.code,
+      tripStarted,
+      driverLocation: driverLocation ? `${driverLocation.latitude}, ${driverLocation.longitude}` : null,
+      userOrigin: userOrigin ? `${userOrigin.latitude}, ${userOrigin.longitude}` : null,
+      userDestination: userDestination ? `${userDestination.latitude}, ${userDestination.longitude}` : null,
+      apiKeyExists: !!GOOGLE_MAPS_APIKEY,
+    });
+    setRouteError(error?.message || "Unknown error");
   };
 
   const toggleTripDetails = () => {
@@ -574,8 +624,6 @@ const MapComponent = ({
         zoomEnabled={true}
         minZoomLevel={10}
         maxZoomLevel={23}
-        onPanDrag={() => setIsUserInteracting(true)}
-        onDoublePress={() => setIsUserInteracting(true)}
       >
         {/* Animated Driver Marker */}
         <AnimatedDriverMarker />
@@ -613,7 +661,7 @@ const MapComponent = ({
             strokeWidth={4}
             strokeColor={THEME.primary}
             onReady={handleDirectionsReady}
-            onError={(error) => console.error("Pre-trip Directions Error:", error)}
+            onError={handleDirectionsError}
           />
         )}
 
@@ -626,7 +674,7 @@ const MapComponent = ({
             strokeWidth={4}
             strokeColor={"#4CAF50"}
             onReady={handleDirectionsReady}
-            onError={(error) => console.error("Trip Directions Error:", error)}
+            onError={handleDirectionsError}
           />
         )}
       </MapView>
@@ -764,7 +812,7 @@ const MapComponent = ({
   );
 };
 
-export default MapComponent;
+export default memo(MapComponent);
 
 const styles = StyleSheet.create({
   container: {

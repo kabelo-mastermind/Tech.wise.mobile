@@ -95,7 +95,7 @@ function BottomTabNavigator() {
         }
       }}
     >
-      <Tab.Screen
+      {/* <Tab.Screen
         name="Services"
         component={NthomeServicesScreen}
         options={{
@@ -108,7 +108,7 @@ function BottomTabNavigator() {
           ),
           tabBarLabel: "Services",
         }}
-      />
+      /> */}
 
       {/* Reorder tabs so Dashboard is first when it's the initial route */}
       {userRole !== "food_driver" && (
