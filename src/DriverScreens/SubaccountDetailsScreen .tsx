@@ -12,7 +12,6 @@ import {
   Modal,
   StyleSheet,
 } from "react-native"
-import axios from "axios"
 import { api } from "../../api"
 import { useSelector } from "react-redux"
 import {
@@ -84,22 +83,18 @@ const SubaccountDetailsScreen = ({ navigation, route }) => {
   useEffect(() => {
     const fetchSubaccountDetails = async () => {
       try {
-        const response = await axios.get(api + "subaccount", {
-          params: { user_id },
-        });
+        const response = await fetch(api + "subaccount?" + new URLSearchParams({ user_id }));
+        const data = await response.json();
 
-        if (response.data.subaccount) {
-          setSubaccountDetails(response.data.subaccount);
+        if (data.subaccount) {
+          setSubaccountDetails(data.subaccount);
           setExists(true);
         }
       } catch (err) {
-        if (err.response && err.response.status === 404) {
-          // No subaccount found
-          setSubaccountDetails(null);
-          setExists(false);
-        } else {
-          setError("Unable to load account details. Please try again later.");
-        }
+        // No subaccount found or error occurred
+        setSubaccountDetails(null);
+        setExists(false);
+        setError("Unable to load account details. Please try again later.");
       } finally {
         setLoading(false);
       }

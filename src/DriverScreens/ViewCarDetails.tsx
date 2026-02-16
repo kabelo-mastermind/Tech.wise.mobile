@@ -17,7 +17,6 @@ import { Ionicons } from "@expo/vector-icons"
 import CustomDrawer from "../components/CustomDrawer"
 import { Icon } from "react-native-elements"
 import { useSelector } from "react-redux"
-import axios from "axios"
 import { api } from "../../api"
 import LoadingScreen from "../components/LoadingScreen";
 
@@ -51,9 +50,10 @@ const ViewCarDetails = ({ navigation }) => {
       setError(null);
       setLoading(true);
 
-      const response = await axios.get(`${api}car_listing/user/${user_id}`)
-      if (response.data && response.data.carListings && response.data.carListings.length > 0) {
-        const sortedCarListings = response.data.carListings.sort((a, b) => b.id - a.id)
+      const response = await fetch(`${api}car_listing/user/${user_id}`);
+      const data = await response.json();
+      if (data && data.carListings && data.carListings.length > 0) {
+        const sortedCarListings = data.carListings.sort((a, b) => b.id - a.id)
         setCarListings(sortedCarListings)
       } else {
         setCarListings([])

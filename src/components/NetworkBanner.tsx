@@ -7,11 +7,26 @@ const NetworkBanner = () => {
   const [slideAnim] = useState(new Animated.Value(-50)); // Start hidden
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener((state) => {
-      setIsConnected(state.isConnected ?? false);
-    });
+    let unsubscribe: (() => void) | undefined;
+    
+    try {
+      unsubscribe = NetInfo.addEventListener((state) => {
+        setIsConnected(state.isConnected ?? false);
+      });
+    } catch (error) {
+      console.log("NetInfo not available, assuming connected");
+      setIsConnected(true);
+    }
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    };
   }, []);
 
   useEffect(() => {

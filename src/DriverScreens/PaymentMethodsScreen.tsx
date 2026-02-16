@@ -13,7 +13,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeft } from "lucide-react-native";
 import { useSelector } from "react-redux";
-import axios from "axios";
 import { api } from '../../api';
 
 const PaymentMethodsScreen = ({ navigation, route }) => {
@@ -60,11 +59,15 @@ const PaymentMethodsScreen = ({ navigation, route }) => {
   
     try {
       // Make API call to update the selected card in the backend
-      const response = await axios.put(`http://10.0.2.2:3000/api/recipients/${cardId}/select`, {
-        user_id: user.user_id,  // Pass the user ID as part of the request
+      const response = await fetch(`http://10.0.2.2:3000/api/recipients/${cardId}/select`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.user_id,  // Pass the user ID as part of the request
+        }),
       });
   
-      if (response.status === 200) {
+      if (response.ok) {
         // Successfully updated, now update the state
         setSelectedCardId(cardId);
       } else {

@@ -16,7 +16,6 @@ import {
 import Icon from "react-native-vector-icons/Feather"
 import CustomDrawer from "../components/CustomDrawer"
 import { useSelector } from "react-redux"
-import axios from "axios"
 import { api } from "../../api"
 import { LinearGradient } from "expo-linear-gradient"
 
@@ -69,10 +68,9 @@ export default function MyRidesScreen({ navigation }) {
   const fetchTrips = async (status) => {
     try {
       setIsLoading(true)
-      const res = await axios.get(api + `tripHistory/${customerId}`, {
-        params: { status: status },
-      })
-      setTrips(res.data)
+      const res = await fetch(api + `tripHistory/${customerId}?status=${status}`);
+      const data = await res.json();
+      setTrips(data)
       setHasError(false)
     } catch (err) {
       setHasError(true)

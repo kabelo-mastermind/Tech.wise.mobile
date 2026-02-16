@@ -9,10 +9,10 @@ import {
   Animated,
   Platform
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text } from 'react-native-animatable';
 import TripRequestModal from '../DriverComponents/Modals/TripRequestModal';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
 import { api } from '../../api';
 import { Ionicons } from '@expo/vector-icons'; // If available in your project
 import { useDispatch } from 'react-redux';
@@ -26,6 +26,7 @@ const PendingTripsBottomSheet = ({ navigation }) => {
   // const [selectedRequest, setSelectedRequest] = useState(null);
   const selectedRequest = useSelector((state) => state.trip.selectedRequest);
   const [loading, setLoading] = useState(true);
+  const [countdown, setCountdown] = useState({});
   const slideAnim = useRef(new Animated.Value(height)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   console.log('-------pending details', pendingTrips);
@@ -36,6 +37,19 @@ const PendingTripsBottomSheet = ({ navigation }) => {
   console.log('Current selected request:', current);
   // Inside PendingTripsBottomSheet component
   const dispatch = useDispatch();
+
+  const getTripStatus = (trip) => {
+    const statuses = trip?.statuses;
+    if (Array.isArray(statuses) && statuses.length > 0) {
+      const lastStatus = statuses[statuses.length - 1];
+      if (typeof lastStatus === 'string') return lastStatus;
+      return lastStatus?.status || null;
+    }
+    if (typeof statuses === 'string') return statuses;
+    return null;
+  };
+
+  const isTripPending = (trip) => getTripStatus(trip) === 'pending';
 
   // In child component
   const handleSelectRequest = (item) => {
@@ -71,9 +85,10 @@ const PendingTripsBottomSheet = ({ navigation }) => {
       const fetchPendingTrips = async () => {
         setLoading(true);
         try {
-          const response = await axios.get(`${api}/driverTrips?driverId=${user_id}`, { timeout: 10000 });
+          const response = await fetch(`${api}/driverTrips?driverId=${user_id}`);
+          const data = await response.json();
 
-          const tripsList = response.data.trips || [];
+          const tripsList = data.trips || [];
 
           if (!Array.isArray(tripsList) || tripsList.length === 0) {
             console.log("No trips found.");
@@ -82,14 +97,41 @@ const PendingTripsBottomSheet = ({ navigation }) => {
             return;
           }
 
-          tripsList.sort((a, b) => new Date(b.currentDate) - new Date(a.currentDate));
-          const latestTrip = tripsList[0];
+          // Filter for pending trips only AND not older than 40 seconds
+          const now = new Date().getTime();
+          const validTrips = tripsList.filter(trip => {
+            // Check if trip is pending
+            if (!isTripPending(trip)) return false;
+            
+            // Check if trip is not older than 40 seconds
+            if (trip.currentDate) {
+              const tripTime = new Date(trip.currentDate).getTime();
+              const ageInSeconds = (now - tripTime) / 1000;
+              if (ageInSeconds > 40) {
+                console.log(`⏰ Trip ${trip.id} expired (${Math.round(ageInSeconds)}s old) - not showing in list`);
+                return false;
+              }
+            }
+            
+            return true;
+          });
+
+          if (validTrips.length === 0) {
+            console.log("No valid pending trips found (all expired or not pending).");
+            setPendingTrips([]);
+            setLoading(false);
+            return;
+          }
+
+          validTrips.sort((a, b) => new Date(b.currentDate) - new Date(a.currentDate));
+          const latestTrip = validTrips[0];
 
           // Fetch customer details for the latest trip
           if (latestTrip.customerId) {
             try {
-              const customerRes = await axios.get(`${api}/customer/${latestTrip.customerId}`);
-              latestTrip.customer = customerRes.data; // add full customer info to the trip object
+              const customerRes = await fetch(`${api}/customer/${latestTrip.customerId}`);
+              const customerData = await customerRes.json();
+              latestTrip.customer = customerData; // add full customer info to the trip object
             } catch (customerError) {
               console.warn('Failed to fetch customer details:', customerError.message);
               latestTrip.customer = null;
@@ -98,14 +140,15 @@ const PendingTripsBottomSheet = ({ navigation }) => {
 
           // Fetch payment details
           try {
-            const paymentRes = await axios.get(`${api}/payment/${latestTrip.id}`);
-            latestTrip.payment = paymentRes.data;
+            const paymentRes = await fetch(`${api}/payment/${latestTrip.id}`);
+            const paymentData = await paymentRes.json();
+            latestTrip.payment = paymentData;
           } catch (paymentError) {
             console.warn('Failed to fetch payment details:', paymentError.message);
             latestTrip.payment = null;
           }
 
-          setPendingTrips([tripsList[0]]);
+          setPendingTrips([latestTrip]);
         } catch (error) {
           // console.error('Error fetching trips:', error.message);
           setPendingTrips([]);
@@ -115,8 +158,53 @@ const PendingTripsBottomSheet = ({ navigation }) => {
       };
 
       fetchPendingTrips();
+
+      // Auto-refresh every 5 seconds to remove expired trips
+      const refreshInterval = setInterval(() => {
+        fetchPendingTrips();
+      }, 5000);
+
+      return () => clearInterval(refreshInterval);
     }
   }, [user_id]);
+
+  // Countdown timer for pending trips
+  useEffect(() => {
+    if (pendingTrips.length === 0) return;
+
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      const newCountdown = {};
+      const expiredTripIds = [];
+
+      pendingTrips.forEach(trip => {
+        if (trip.currentDate) {
+          const tripTime = new Date(trip.currentDate).getTime();
+          const elapsedSeconds = Math.floor((now - tripTime) / 1000);
+          const remainingSeconds = Math.max(0, 40 - elapsedSeconds);
+          newCountdown[trip.id] = remainingSeconds;
+          if (remainingSeconds === 0) {
+            expiredTripIds.push(trip.id);
+          }
+        }
+      });
+
+      setCountdown(newCountdown);
+
+      if (expiredTripIds.length > 0 && user_id) {
+        AsyncStorage.multiRemove([
+          `cachedRemainingTime_${user_id}`,
+          `cachedTripStatuses_${user_id}`,
+        ]).then(() => {
+          console.log('🗑️ Cleared pending-trip cache after countdown expiry');
+        }).catch((error) => {
+          console.error('❌ Failed to clear pending-trip cache:', error);
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [pendingTrips]);
 
   const handleClose = () => {
     // Animate the bottom sheet sliding down before navigation
@@ -164,6 +252,15 @@ const PendingTripsBottomSheet = ({ navigation }) => {
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>Pending</Text>
           </View>
+        </View>
+        <View style={styles.countdownContainer}>
+          <Ionicons name="timer-outline" size={20} color={countdown[item.id] <= 10 ? "#FF4444" : "#FFD700"} />
+          <Text style={[
+            styles.countdownText,
+            countdown[item.id] <= 10 && styles.countdownUrgent
+          ]}>
+            {countdown[item.id] !== undefined ? countdown[item.id] : 40}s
+          </Text>
         </View>
       </View>
 
@@ -554,6 +651,24 @@ const styles = StyleSheet.create({
     borderTopColor: 'transparent',
     marginBottom: 16,
     transform: [{ rotate: '45deg' }],
+  },
+  countdownContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    marginLeft: 8,
+  },
+  countdownText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFD700',
+    marginLeft: 4,
+  },
+  countdownUrgent: {
+    color: '#FF4444',
   },
 });
 

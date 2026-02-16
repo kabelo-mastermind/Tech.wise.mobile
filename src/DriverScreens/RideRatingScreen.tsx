@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/FontAwesome";
 import { Ionicons } from "@expo/vector-icons";
-import axios from "axios";
 import { api } from "../../api";
 import { DestinationContext, OriginContext } from "../contexts/contexts";
 
@@ -54,12 +53,16 @@ const RideRatingModal = ({ visible, onClose, tripId, userId }) => {
     setIsSubmitting(true);
 
     try {
-      await axios.post(api + "ride/rating", {
-        tripId,
-        userId,
-        rating,
-        feedback,
-        role: "driver",
+      await fetch(api + "ride/rating", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tripId,
+          userId,
+          rating,
+          feedback,
+          role: "driver",
+        }),
       });
 
       setSubmitted(true);

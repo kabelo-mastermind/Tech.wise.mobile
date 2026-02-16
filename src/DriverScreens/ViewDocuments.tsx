@@ -17,7 +17,6 @@ import { Ionicons } from "@expo/vector-icons"
 import CustomDrawer from "../components/CustomDrawer"
 import { Icon } from "react-native-elements"
 import { useSelector } from "react-redux"
-import axios from "axios"
 import { api } from "../../api"
 import * as FileSystem from "expo-file-system"
 import { WebView } from "react-native-webview"
@@ -105,9 +104,10 @@ const ViewDocuments = ({ navigation }) => {
       setError(null);
       setLoading(true);
       
-      const response = await axios.get(`${api}driver_documents/${user_id}`)
-      if (response.data && response.data.documents.length > 0) {
-        setDocuments(response.data.documents[0])
+      const response = await fetch(`${api}driver_documents/${user_id}`);
+      const data = await response.json();
+      if (data && data.documents.length > 0) {
+        setDocuments(data.documents[0])
       } else {
         // No documents found - this is not an error, just empty state
         setDocuments({})

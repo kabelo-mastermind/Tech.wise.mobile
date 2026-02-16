@@ -5,7 +5,11 @@ import MapView, { PROVIDER_GOOGLE, Marker } from "react-native-maps"
 import MapViewDirections from "react-native-maps-directions"
 import { darkMapStyle } from "../global/mapStyle"
 import { GOOGLE_MAPS_APIKEY } from "@env"
+import Constants from 'expo-constants'
 import { Icon } from "react-native-elements"
+
+// Fallback to Constants if @env import fails
+const MAPS_API_KEY = GOOGLE_MAPS_APIKEY || Constants.expoConfig?.extra?.googleMapsApiKey || "AIzaSyCW_3yyD7H0125SOsP-vABHG6BrSm47j-w";
 
 // Utility functions
 function calculateBearing(start, end) {
@@ -190,6 +194,7 @@ const MapComponent = ({
   userDestination,
   driverLocation,
   tripStart,
+  tripAccepted = false,
   mapRef: externalMapRef,
   hideNavigation = false,
   driverSpeed = null,
@@ -227,6 +232,23 @@ const MapComponent = ({
 
   // Use tripStart directly instead of local state
   const tripStarted = tripStart;
+
+  // Debug polyline rendering
+  useEffect(() => {
+    console.log("🗺️ POLYLINE DEBUG:", {
+      tripStarted,
+      hasDriverLocation: !!driverLocation?.latitude,
+      hasUserOrigin: !!userOrigin?.latitude,
+      hasUserDestination: !!userDestination?.latitude,
+      hasApiKey: !!MAPS_API_KEY,
+      apiKeyLength: MAPS_API_KEY?.length,
+      driverLocation: driverLocation ? `${driverLocation.latitude}, ${driverLocation.longitude}` : 'null',
+      userOrigin: userOrigin ? `${userOrigin.latitude}, ${userOrigin.longitude}` : 'null',
+      userDestination: userDestination ? `${userDestination.latitude}, ${userDestination.longitude}` : 'null',
+      shouldShowPreTrip: !tripStarted && !!driverLocation?.latitude && !!userOrigin?.latitude && !!MAPS_API_KEY,
+      shouldShowDuringTrip: tripStarted && !!driverLocation?.latitude && !!userDestination?.latitude && !!MAPS_API_KEY,
+    });
+  }, [tripStarted, driverLocation, userOrigin, userDestination]);
 
   // Smooth marker animation
   const animateMarkerToPosition = useCallback((newCoordinate) => {
@@ -431,6 +453,57 @@ const MapComponent = ({
     }
   }, [tripStart]);
 
+  // Auto-zoom map when trip is accepted or started
+  useEffect(() => {
+    if (!mapRef?.current || !mapReady || !driverLocation) return;
+
+    // Zoom when trip accepted (userOrigin and userDestination are set)
+    if (tripAccepted && userOrigin?.latitude && userDestination?.latitude && !isUserInteracting) {
+      const coordinates = [driverLocation];
+      
+      // Add pickup location
+      if (userOrigin?.latitude && userOrigin?.longitude) {
+        coordinates.push(userOrigin);
+      }
+      
+      // Add destination when trip started
+      if (tripStarted && userDestination?.latitude && userDestination?.longitude) {
+        coordinates.push(userDestination);
+      }
+
+      // Only zoom if we have at least 2 points
+      if (coordinates.length >= 2) {
+        console.log("🗺️ Auto-zooming map to show route with", coordinates.length, "points");
+        
+        mapRef.current.fitToCoordinates(coordinates, {
+          edgePadding: { top: 100, right: 100, bottom: 300, left: 100 },
+          animated: true,
+        });
+      }
+    }
+  }, [userOrigin, userDestination, tripStarted, driverLocation, mapReady, mapRef, isUserInteracting, tripAccepted]);
+
+  // Auto-switch to overview when showing pre-trip route
+  useEffect(() => {
+    if (!mapReady || !driverLocation) return;
+
+    const hasPickup =
+      tripAccepted &&
+      userOrigin?.latitude &&
+      userOrigin?.longitude &&
+      userOrigin.latitude !== 0 &&
+      userOrigin.longitude !== 0;
+
+    if (!tripStarted && hasPickup && !isUserInteracting) {
+      setCameraMode(CAMERA_MODES.OVERVIEW);
+      return;
+    }
+
+    if (tripStarted && cameraMode === CAMERA_MODES.OVERVIEW) {
+      setCameraMode(CAMERA_MODES.FOLLOW);
+    }
+  }, [mapReady, driverLocation, userOrigin, tripStarted, isUserInteracting, cameraMode, tripAccepted]);
+
   const handleMapReady = () => {
     setMapReady(true);
   };
@@ -499,7 +572,7 @@ const MapComponent = ({
       driverLocation: driverLocation ? `${driverLocation.latitude}, ${driverLocation.longitude}` : null,
       userOrigin: userOrigin ? `${userOrigin.latitude}, ${userOrigin.longitude}` : null,
       userDestination: userDestination ? `${userDestination.latitude}, ${userDestination.longitude}` : null,
-      apiKeyExists: !!GOOGLE_MAPS_APIKEY,
+      apiKeyExists: !!MAPS_API_KEY,
     });
     setRouteError(error?.message || "Unknown error");
   };
@@ -629,7 +702,7 @@ const MapComponent = ({
         <AnimatedDriverMarker />
 
         {/* Origin Marker */}
-        {userOrigin?.latitude && userOrigin?.longitude && (
+        {tripAccepted && userOrigin?.latitude && userOrigin?.longitude && (
           <Marker coordinate={userOrigin}>
             <View style={styles.originMarker}>
               <Icon type="material-community" name="map-marker" color={THEME.primary} size={25} />
@@ -653,28 +726,47 @@ const MapComponent = ({
         )}
 
         {/* Pre-trip: Driver to Origin */}
-        {!tripStarted && driverLocation?.latitude && userOrigin?.latitude && GOOGLE_MAPS_APIKEY && (
+        {!tripStarted &&
+         tripAccepted &&
+         driverLocation?.latitude && 
+         driverLocation?.longitude &&
+         userOrigin?.latitude && 
+         userOrigin?.longitude &&
+         userOrigin.latitude !== 0 &&
+         userOrigin.longitude !== 0 &&
+         MAPS_API_KEY && (
           <MapViewDirections
             origin={driverLocation}
             destination={userOrigin}
-            apikey={GOOGLE_MAPS_APIKEY}
-            strokeWidth={4}
+            apikey={MAPS_API_KEY}
+            strokeWidth={6}
             strokeColor={THEME.primary}
             onReady={handleDirectionsReady}
             onError={handleDirectionsError}
+            optimizeWaypoints={true}
+            mode="DRIVING"
           />
         )}
 
         {/* During trip: Driver to Destination */}
-        {tripStarted && driverLocation?.latitude && userDestination?.latitude && GOOGLE_MAPS_APIKEY && (
+        {tripStarted && 
+         driverLocation?.latitude && 
+         driverLocation?.longitude &&
+         userDestination?.latitude && 
+         userDestination?.longitude &&
+         userDestination.latitude !== 0 &&
+         userDestination.longitude !== 0 &&
+         MAPS_API_KEY && (
           <MapViewDirections
             origin={driverLocation}
             destination={userDestination}
-            apikey={GOOGLE_MAPS_APIKEY}
-            strokeWidth={4}
+            apikey={MAPS_API_KEY}
+            strokeWidth={6}
             strokeColor={"#4CAF50"}
             onReady={handleDirectionsReady}
             onError={handleDirectionsError}
+            optimizeWaypoints={true}
+            mode="DRIVING"
           />
         )}
       </MapView>
@@ -709,7 +801,11 @@ const MapComponent = ({
 
       {/* Trip Details Card */}
       {distance && duration && (
-        <Animated.View style={[styles.tripDetailsCard, { height: tripDetailsHeight }]}>
+        <Animated.View style={[
+          styles.tripDetailsCard, 
+          { height: tripDetailsHeight },
+          tripStarted ? styles.tripDetailsCardCentered : styles.tripDetailsCardLeft
+        ]}>
           <TouchableOpacity onPress={toggleTripDetails} style={styles.tripDetailsTouchable}>
             <View style={styles.tripDetailsHeader}>
               <Icon type="material-community" name="map-marker-path" color={THEME.primary} size={20} />
@@ -932,14 +1028,18 @@ const styles = StyleSheet.create({
   tripDetailsCard: {
     position: "absolute",
     top: 70,
-    left: 16,
-    right: 16,
     backgroundColor: "#1A1D26",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(0, 216, 240, 0.3)",
     overflow: "hidden",
     width: "80%",
+  },
+  tripDetailsCardLeft: {
+    left: 16,
+  },
+  tripDetailsCardCentered: {
+    left: '10%',  // (100% - 80%) / 2 = 10% on each side
   },
   tripDetailsTouchable: {
     width: "100%",

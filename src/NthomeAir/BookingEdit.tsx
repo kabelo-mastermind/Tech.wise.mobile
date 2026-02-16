@@ -13,7 +13,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native"
-import axios from "axios"
 import { api } from "../../api"
 import DateTimePicker from "@react-native-community/datetimepicker"
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, FontAwesome } from "@expo/vector-icons"
@@ -122,9 +121,13 @@ const handleUpdate = async () => {
   }
 
   try {
-    await axios.put(api + `helicopter_quotes/${booking.id}`, {
-      ...form,
-      user_id: userId,
+    await fetch(api + `helicopter_quotes/${booking.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...form,
+        user_id: userId,
+      }),
     });
 
     showToast("success", "Success", "Booking updated!");

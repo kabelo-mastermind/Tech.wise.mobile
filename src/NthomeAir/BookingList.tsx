@@ -19,7 +19,6 @@ import {
 } from "react-native"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
 import { Icon } from "react-native-elements"
-import axios from "axios"
 import { api } from "../../api"
 import { useSelector } from "react-redux"
 import { useFocusEffect } from "@react-navigation/native"
@@ -114,11 +113,11 @@ const BookingList = ({ navigation, route }) => {
     useCallback(() => {
       setLoading(true);
 
-      axios
-        .get(api + "helicopter_quotes/" + userIdGlobal)
-        .then((res) => setBookings(Array.isArray(res.data) ? res.data : []))
+      fetch(api + "helicopter_quotes/" + userIdGlobal)
+        .then((res) => res.json())
+        .then((data) => setBookings(Array.isArray(data) ? data : []))
         .catch((error) => {
-          // console.error("Error loading bookings:", error.response?.data || error.message);
+          // console.error("Error loading bookings:", error.message);
           showToast("error", "Error", "Error loading bookings");
         })
         .finally(() => setLoading(false));

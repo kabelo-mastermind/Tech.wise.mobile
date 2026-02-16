@@ -22,7 +22,6 @@ import { useDispatch } from 'react-redux';
 import { setUser } from '../redux/actions/authActions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc } from 'firebase/firestore';
-import axios from 'axios';
 import { api } from '../../api';
 import { LinearGradient } from 'expo-linear-gradient'; // If available in your project
 import { showToast } from '../constants/showToast';
@@ -49,11 +48,30 @@ const LoginScreen = ({ navigation }) => {
         const currentUser = auth.currentUser;
 
         if (currentUser.emailVerified) {
-          dispatch(setUser({
-            name: user.displayName,
-            email: user.email,
-            id: user.uid,
-          }));
+          // Try to load cached user data for offline support
+          try {
+            const cachedData = await AsyncStorage.getItem('cachedUserData');
+            if (cachedData) {
+              const parsedData = JSON.parse(cachedData);
+              console.log("📱 Restoring cached user data on app startup");
+              dispatch(setUser(parsedData));
+            } else {
+              // Fallback to basic user data if no cache exists
+              dispatch(setUser({
+                name: user.displayName,
+                email: user.email,
+                id: user.uid,
+              }));
+            }
+          } catch (error) {
+            console.error("Error loading cached data:", error);
+            // Fallback to basic user data
+            dispatch(setUser({
+              name: user.displayName,
+              email: user.email,
+              id: user.uid,
+            }));
+          }
           navigation.replace('DrawerNavigator');
         } else {
           // User is logged in but email not verified - send to verification screen
@@ -156,26 +174,58 @@ const LoginScreen = ({ navigation }) => {
 
   const fetchDriverUserID = async (user, userData) => {
     try {
-      const response = await axios.post(api + 'login', {
-        email,
+      // Try to fetch from network
+      const response = await fetch(api + 'login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
       });
 
-      const user_id = response.data.id;
-      console.log("driver profile picture:", response.data || "N/A");
+      const data = await response.json();
+      const user_id = data.id;
+      console.log("driver profile picture:", data || "N/A");
 
       setUser_Id(user_id);
 
-      // Dispatch updated user data to Redux with user_id and userData (role)
-      dispatch(setUser({
+      // Create complete user data object
+      const completeUserData = {
         name: user.displayName,
         email: user.email,
         id: user.uid,
-        role: response.data.role,
+        role: data.role,
         user_id: user_id,
-        profile_picture: response.data.profile_picture || "N/A"
-      }));
+        profile_picture: data.profile_picture || "N/A"
+      };
+
+      // Store complete user data in AsyncStorage for offline access
+      await AsyncStorage.setItem('cachedUserData', JSON.stringify(completeUserData));
+      console.log("✅ User data cached successfully");
+
+      // Dispatch updated user data to Redux with user_id and userData (role)
+      dispatch(setUser(completeUserData));
     } catch (error) {
       console.error("Error fetching driver id:", error);
+      
+      // Try to load cached data if network fails
+      try {
+        const cachedData = await AsyncStorage.getItem('cachedUserData');
+        if (cachedData) {
+          const parsedData = JSON.parse(cachedData);
+          console.log("📱 Loading cached user data (offline mode)");
+          
+          setUser_Id(parsedData.user_id);
+          dispatch(setUser(parsedData));
+          
+          showToast("info", "Offline Mode", "Using cached data. Some features may be limited.");
+        } else {
+          showToast("error", "Connection Error", "Unable to fetch user data. Please check your connection.");
+        }
+      } catch (cacheError) {
+        console.error("Error loading cached data:", cacheError);
+        showToast("error", "Error", "Failed to load user data.");
+      }
     }
   };
 

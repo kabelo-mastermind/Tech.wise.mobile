@@ -16,7 +16,6 @@ import {
 } from "react-native"
 import { Ionicons, MaterialCommunityIcons, FontAwesome5, FontAwesome } from "@expo/vector-icons"
 import DateTimePicker from "@react-native-community/datetimepicker"
-import axios from "axios"
 import { api } from "../../api"
 import { useSelector } from "react-redux"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -597,7 +596,11 @@ const handleSubmit = React.useCallback(async () => {
   }
 
   try {
-    await axios.post(api + "helicopter_quotes", { user_id: userId, ...form });
+    await fetch(api + "helicopter_quotes", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, ...form }),
+    });
 
  Alert.alert( "Quote Request Submitted", "Thank you! We will reply within 24 hours with your personalized quote. Please be at the airport 2 hours before your scheduled departure time.", )
  

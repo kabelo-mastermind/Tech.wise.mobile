@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ArrowLeft } from "lucide-react-native"
 import { useSelector } from "react-redux"
-import axios from "axios"
 import { Platform } from "react-native"
 import { Picker } from "@react-native-picker/picker"
 import { api } from "../../api"
@@ -68,10 +67,9 @@ export default function PaymentMethod({ navigation, route }) {
   useEffect(() => {
     const fetchPaystackBanks = async () => {
       try {
-        const response = await axios.get(
-          api + "paystack-banks", // Call your server endpoint
-        )
-        setPaystackBanks(response.data)
+        const response = await fetch(api + "paystack-banks");
+        const data = await response.json();
+        setPaystackBanks(data);
       } catch (error) {
         console.error("Error fetching Paystack banks:", error)
         Alert.alert("Error", "Failed to load bank list. Check your server.")
@@ -82,8 +80,9 @@ export default function PaymentMethod({ navigation, route }) {
   }, [])
   const checkIfSubaccountExists = async () => {
     try {
-      const response = await axios.get(api + `check-subaccount?user_id=${user_id}`);
-      return response.data.exists; // backend returns { exists: true/false }
+      const response = await fetch(api + `check-subaccount?user_id=${user_id}`);
+      const data = await response.json();
+      return data.exists; // backend returns { exists: true/false }
     } catch (err) {
       console.error("Error checking subaccount:", err);
       return false;
@@ -112,36 +111,42 @@ export default function PaymentMethod({ navigation, route }) {
     try {
       if (exists) {
         // 🔁 UPDATE SUBACCOUNT
-        const updateResponse = await axios.put(api + "update-subaccount", payload, {
-          headers: { "Content-Type": "application/json" },
-        })
+        const updateResponse = await fetch(api + "update-subaccount", {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const updateData = await updateResponse.json();
 
-        if (updateResponse.status === 200) {
-          console.log("Subaccount updated:", updateResponse.data)
+        if (updateResponse.ok) {
+          console.log("Subaccount updated:", updateData);
           Alert.alert("Success", "Subaccount updated successfully")
           navigation.navigate("successPage", {
             user_id: user_id,
-            status: updateResponse.data.status,
+            status: updateData.status,
             account_number: cardNumber,
-            is_verified: updateResponse.data.data?.is_verified,
+            is_verified: updateData.data?.is_verified,
             bank_code: bankCode,
             country_code: "ZA",
             account_name: nameOnCard,
-            subaccountCode: updateResponse.data.data?.subaccount_code,
+            subaccountCode: updateData.data?.subaccount_code,
           })
         } else {
-          console.log("Error updating subaccount:", updateResponse.data)
+          console.log("Error updating subaccount:", updateData);
           Alert.alert("Error", "Failed to update subaccount.")
         }
       } else {
         // 🆕 CREATE SUBACCOUNT
-        const createResponse = await axios.post(api + "create-subaccount", payload, {
-          headers: { "Content-Type": "application/json" },
-        })
+        const createResponse = await fetch(api + "create-subaccount", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const createData = await createResponse.json();
 
         if (createResponse.status === 201) {
-          const data = createResponse.data.data
-          console.log("Subaccount created successfully:", data)
+          const data = createData.data;
+          console.log("Subaccount created successfully:", data);
 
           navigation.navigate("successPage", {
             user_id: user_id,

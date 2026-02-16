@@ -19,13 +19,13 @@ import { Icon } from "react-native-elements"
 import * as ImagePicker from "expo-image-picker"
 import { LinearGradient } from "expo-linear-gradient"
 import { api } from "../../api"
-import axios from "axios"
 import { useSelector } from "react-redux"
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../firebase'; // Firebase Storage Import
 import { auth, db } from '../../FirebaseConfig';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from "firebase/auth";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useDispatch } from 'react-redux';
 import { setUser } from '../redux/actions/authActions';
@@ -101,25 +101,58 @@ const DriverProfile = ({ navigation }) => {
   const fetchCustomer = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(api + `customer/${user_id}`);
-      setCustomerData(res.data);
+      // Try to fetch from network
+      const res = await fetch(api + `customer/${user_id}`);
+      const data = await res.json();
+      setCustomerData(data);
 
       // Initialize form data with fetched data
-      setFormData({
-        name: res.data.name || "",
-        lastName: res.data.lastName || "",
-        email: res.data.email || "",
-        phoneNumber: res.data.phoneNumber || "",
-        address: res.data.address || "",
-        current_address: res.data.current_address || "",
-        gender: res.data.gender || "",
-      });
+      const newFormData = {
+        name: data.name || "",
+        lastName: data.lastName || "",
+        email: data.email || "",
+        phoneNumber: data.phoneNumber || "",
+        address: data.address || "",
+        current_address: data.current_address || "",
+        gender: data.gender || "",
+      };
+      setFormData(newFormData);
+
+      // Cache the customer data
+      await AsyncStorage.setItem(`cachedCustomerData_${user_id}`, JSON.stringify(data));
+      console.log("✅ Customer data cached");
 
       setError(null); // Clear any previous errors
     } catch (err) {
       console.error("Error fetching user:", err);
-      setError("Failed to fetch user details.");
-      throw new Error("Failed to fetch customer data");
+      
+      // Try to load from cache on network failure
+      try {
+        const cachedData = await AsyncStorage.getItem(`cachedCustomerData_${user_id}`);
+        if (cachedData) {
+          const data = JSON.parse(cachedData);
+          setCustomerData(data);
+          setFormData({
+            name: data.name || "",
+            lastName: data.lastName || "",
+            email: data.email || "",
+            phoneNumber: data.phoneNumber || "",
+            address: data.address || "",
+            current_address: data.current_address || "",
+            gender: data.gender || "",
+          });
+          console.log("📱 Loaded cached customer data (offline mode)");
+          showToast("info", "Offline Mode", "Using cached profile data.");
+          setError(null);
+        } else {
+          setError("Failed to fetch user details.");
+          throw new Error("Failed to fetch customer data");
+        }
+      } catch (cacheError) {
+        console.error("Error loading cached data:", cacheError);
+        setError("Failed to fetch user details.");
+        throw new Error("Failed to fetch customer data");
+      }
     } finally {
       setLoading(false);
     }
@@ -128,18 +161,40 @@ const DriverProfile = ({ navigation }) => {
   const fetchTrips = async () => {
     setLoadingTrips(true);
     try {
-      const res = await axios.get(api + `tripHistory/${user_id}`, {
-        params: { status: 'completed' },
-      });
+      // Try to fetch from network
+      const res = await fetch(api + `tripHistory/${user_id}?status=completed`);
+      const data = await res.json();
 
-      setTrips(res.data);
-      const totalCompleted = res.data.length;
+      setTrips(data);
+      const totalCompleted = data.length;
       setTotalCompletedTrips(totalCompleted);
+
+      // Cache trips data
+      await AsyncStorage.setItem(`cachedTrips_${user_id}`, JSON.stringify(data));
+      console.log("✅ Trips data cached");
+
       setError(null); // Clear any previous errors
     } catch (err) {
       console.error("Error fetching trips:", err);
-      setError("Failed to load trip history.");
-      throw new Error("Failed to fetch trip data");
+      
+      // Try to load from cache on network failure
+      try {
+        const cachedTrips = await AsyncStorage.getItem(`cachedTrips_${user_id}`);
+        if (cachedTrips) {
+          const data = JSON.parse(cachedTrips);
+          setTrips(data);
+          setTotalCompletedTrips(data.length);
+          console.log("📱 Loaded cached trips data (offline mode)");
+          setError(null);
+        } else {
+          setError("Failed to load trip history.");
+          throw new Error("Failed to fetch trip data");
+        }
+      } catch (cacheError) {
+        console.error("Error loading cached trips:", cacheError);
+        setError("Failed to load trip history.");
+        throw new Error("Failed to fetch trip data");
+      }
     } finally {
       setLoadingTrips(false);
     }
@@ -269,9 +324,13 @@ const DriverProfile = ({ navigation }) => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
           // ✅ Update in MySQL
-          const res = await axios.post(`${api}update-profile-picture`, {
-            profile_picture: downloadURL,
-            user_id,
+          const res = await fetch(`${api}update-profile-picture`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profile_picture: downloadURL,
+              user_id,
+            })
           });
 
           if (res.status === 200) {
@@ -329,7 +388,11 @@ const DriverProfile = ({ navigation }) => {
         user_id,
       };
 
-      const response = await axios.put(api + "update-customer", updateData);
+      const response = await fetch(api + "update-customer", {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      });
 
       if (response.status === 200) {
         // Update local state
@@ -367,9 +430,13 @@ const DriverProfile = ({ navigation }) => {
     setIsSaving(true);
     try {
       // 1. Always update MySQL
-      const response = await axios.put(api + "update-customer", {
-        ...formData,
-        user_id,
+      const response = await fetch(api + "update-customer", {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          user_id,
+        })
       });
 
       if (response.status === 200) {

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 
 import {
   View,
@@ -15,17 +16,20 @@ import {
   ActivityIndicator,
   Modal,
   Image,
+  Alert,
+  Linking,
+  Platform,
 } from "react-native"
 
 import { BarChart, LineChart } from "react-native-chart-kit"
 import { useFonts } from "expo-font"
 import { Icon } from "react-native-elements"
+import * as LocalAuthentication from 'expo-local-authentication'
 import { useDispatch, useSelector } from "react-redux"
 import CustomDrawer from "../components/CustomDrawer"
 
 // Import functions from timeTracker file
 import { formatSecondsToTimeString, MAX_TIME_PER_DAY_SECONDS } from "../utils/timeTracker"
-import axios from "axios"
 import { api } from "../../api"
 import { setSelectedRequest } from "../redux/actions/tripActions"
 import AllCustomAlert from "../components/AllCustomAlert"
@@ -104,10 +108,26 @@ const DriverStats = ({ navigation, route }) => {
     const fetchCustomer = async () => {
       setLoadingCustomerData(true);
       try {
-        const res = await axios.get(api + `customer/${user_id}`)
-        setCustomerData(res.data)
+        const res = await fetch(api + `customer/${user_id}`)
+        const data = await res.json()
+        setCustomerData(data)
+        
+        // Cache customer data
+        await AsyncStorage.setItem(`cachedCustomerData_${user_id}`, JSON.stringify(data))
+        console.log('Customer data cached successfully')
 
       } catch (err) {
+        // Load from cache on network failure
+        try {
+          const cached = await AsyncStorage.getItem(`cachedCustomerData_${user_id}`)
+          if (cached) {
+            setCustomerData(JSON.parse(cached))
+            console.log('Loaded customer data from cache (offline mode)')
+          }
+        } catch (cacheErr) {
+          console.error('Error loading cached customer data:', cacheErr)
+        }
+        
         showAlert({
           title: "Error",
           message:
@@ -132,10 +152,10 @@ useEffect(() => {
     return
   }
 
-  axios
-    .get(api + `driver/totalWorkedToday/${user_id}`)
-    .then((res) => {
-      const dbValue = res.data.totalSeconds;
+  fetch(api + `driver/totalWorkedToday/${user_id}`)
+    .then((res) => res.json())
+    .then(async (data) => {
+      const dbValue = data.totalSeconds;
       const MAX_TIME_PER_DAY_SECONDS = 12 * 60 * 60;
       
       // Store the actual time worked (dbValue is time worked)
@@ -152,8 +172,26 @@ useEffect(() => {
       }
       
       setTotalSeconds(timeWorked); // Store actual time worked
+      
+      // Cache total worked time
+      await AsyncStorage.setItem(`cachedTotalWorkedToday_${user_id}`, JSON.stringify({ totalSeconds: timeWorked }))
+      console.log('Total worked time cached successfully')
     })
-    .catch((err) => console.error(err))
+    .catch(async (err) => {
+      console.error(err)
+      
+      // Load from cache on network failure
+      try {
+        const cached = await AsyncStorage.getItem(`cachedTotalWorkedToday_${user_id}`)
+        if (cached) {
+          const cachedData = JSON.parse(cached)
+          setTotalSeconds(cachedData.totalSeconds || 0)
+          console.log('Loaded total worked time from cache (offline mode)')
+        }
+      } catch (cacheErr) {
+        console.error('Error loading cached total worked time:', cacheErr)
+      }
+    })
 }, [user_id, state])
 
   console.log("Total worked time today:", totalSeconds)
@@ -170,12 +208,15 @@ useEffect(() => {
     }
 
     try {
-      const response = await axios.post(api + "driver/startSession", {
-        userId: user_id,
+      const response = await fetch(api + "driver/startSession", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user_id })
       });
+      const data = await response.json();
 
       if (response.status === 200) {
-        return response.data;
+        return data;
       } else {
         showAlert({
           title: "Unexpected Response",
@@ -218,13 +259,15 @@ useEffect(() => {
         return
       }
 
-      const response = await axios.put(api + "driver/updateStatus", {
-        userId: user_id,
-        state: "online",
-      })
+      const response = await fetch(api + "driver/updateStatus", {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user_id, state: "online" })
+      });
+      const data = await response.json();
 
       if (response.status === 200) {
-        if (response.data.alreadyOnline) {
+        if (data.alreadyOnline) {
           console.log("Driver is already online, navigating...")
         } else {
           console.log("Driver status updated to online")
@@ -249,11 +292,10 @@ useEffect(() => {
     if (!user_id) return false; // No user, cannot go online
 
     try {
-      const stateResponse = await axios.get(`${api}getDriverState`, {
-        params: { userId: user_id },
-      });
+      const stateResponse = await fetch(`${api}getDriverState?userId=${user_id}`)
+      const stateData = await stateResponse.json();
 
-      const { status } = stateResponse.data;
+      const { status } = stateData;
 
       if (status !== "approved") {
         // User exists but not yet approved
@@ -292,6 +334,72 @@ useEffect(() => {
     }
   };
 
+  // Helper function to open security settings
+  const openSecuritySettings = () => {
+    if (Platform.OS === 'android') {
+      Linking.sendIntent('android.settings.SECURITY_SETTINGS');
+    } else {
+      // iOS doesn't allow direct access to security settings
+      Linking.openSettings();
+    }
+  };
+
+  // Biometric authentication function
+  const authenticateDriver = async () => {
+    try {
+      // Try to get supported authentication types
+      const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+      console.log('🔐 Supported authentication types:', supportedTypes);
+
+      // Check if any authentication is available (biometric OR device credentials)
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const securityLevel = await LocalAuthentication.getEnrolledLevelAsync();
+      console.log('🔐 Hardware available:', hasHardware, '| Security level:', securityLevel);
+
+      // Attempt authentication directly (works with biometric, PIN, pattern, password)
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: '🔐 Authenticate to go online',
+        fallbackLabel: 'Use Device Credentials',
+        disableDeviceFallback: false, // Allow fallback to PIN/pattern/password
+        cancelLabel: 'Cancel',
+      });
+
+      if (result.success) {
+        console.log('✅ Authentication successful');
+        return true;
+      } else if (result.error === 'user_cancel') {
+        console.log('❌ User cancelled authentication');
+        return false;
+      } else if (result.error === 'not_enrolled' || result.error === 'lockout' || result.error === 'passcode_not_set') {
+        Alert.alert(
+          '🔒 No Authentication Set Up',
+          'For security purposes, you must set up device authentication before going online.\n\nPlease set up:\n• Fingerprint\n• Face ID\n• PIN, pattern, or password\n\nin your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: openSecuritySettings }
+          ]
+        );
+        return false;
+      } else {
+        console.log('❌ Authentication failed:', result.error);
+        Alert.alert(
+          'Authentication Failed',
+          'You must authenticate to go online as a driver.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Authentication error:', error);
+      Alert.alert(
+        'Authentication Error',
+        'An error occurred during authentication. Please try again.',
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+  };
+
   // 2️⃣ Main function to handle going online
   const handleGoOnline = async () => {
     animateButton();
@@ -302,6 +410,17 @@ useEffect(() => {
       return;
     }
 
+    // 🔐 Authenticate before going online
+    console.log('🔐 Attempting authentication before going online...');
+    const isAuthenticated = await authenticateDriver();
+    
+    if (!isAuthenticated) {
+      console.log('🚫 Authentication failed - cannot go online');
+      setIsOnline(false);
+      return;
+    }
+
+    console.log('✅ Authentication successful - proceeding to go online');
     setIsOnline(true);
     await checkAndGoOnline();
   };
@@ -360,7 +479,7 @@ useEffect(() => {
 
     const axiosWithTimeout = async (url: string, timeout = 5000) => {
       return Promise.race([
-        axios.get(url),
+        fetch(url).then(res => res.json()),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Request timed out")), timeout)
         ),
@@ -383,8 +502,7 @@ useEffect(() => {
       setErrorStats(null)
 
       try {
-        const res = await axiosWithTimeout(`${api}driver/stats/${user_id}`)
-        const data = res.data
+        const data = await axiosWithTimeout(`${api}driver/stats/${user_id}`)
         const today = new Date()
 
         setPreviousStats(stats)
@@ -417,7 +535,7 @@ useEffect(() => {
               .map(async (trip) => {
                 try {
                   const res = await axiosWithTimeout(`${api}payment/${trip.tripId}`)
-                  earnings += Number.parseFloat(res.data.amount || 0)
+                  earnings += Number.parseFloat(res.amount || 0)
                 } catch (err) {
                   console.warn(`Failed to fetch payment for trip ${trip.tripId}`, err)
                 }
@@ -478,10 +596,38 @@ useEffect(() => {
           weekly: prevWeeklyStats,
           monthly: prevMonthlyStats,
         })
+        
+        // Cache driver stats
+        await AsyncStorage.setItem(`cachedDriverStats_${user_id}`, JSON.stringify({
+          stats: {
+            daily: dailyStats,
+            weekly: weeklyStats,
+            monthly: monthlyStats,
+          },
+          previousStats: {
+            daily: prevDailyStats,
+            weekly: prevWeeklyStats,
+            monthly: prevMonthlyStats,
+          }
+        }))
+        console.log('Driver stats cached successfully')
 
         setLoadingStats(false)
       } catch (err) {
         setErrorStats("Failed to load stats, retrying...");
+        
+        // Load from cache on network failure
+        try {
+          const cached = await AsyncStorage.getItem(`cachedDriverStats_${user_id}`)
+          if (cached) {
+            const cachedData = JSON.parse(cached)
+            setStats(cachedData.stats)
+            setPreviousStats(cachedData.previousStats)
+            console.log('Loaded driver stats from cache (offline mode)')
+          }
+        } catch (cacheErr) {
+          console.error('Error loading cached driver stats:', cacheErr)
+        }
 
         showAlert({
           title: "Error",

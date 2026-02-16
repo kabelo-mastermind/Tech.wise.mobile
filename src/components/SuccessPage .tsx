@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "rea
 import { ArrowLeft, Check } from "lucide-react-native"; // Use lucide-react-native for icons
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../../api";
-import axios from "axios";
 
 export default function SuccessPage ({ navigation, route }) {
     const { bank_code, country_code, account_number, subaccountCode, user_id } = route.params;
@@ -17,16 +16,21 @@ export default function SuccessPage ({ navigation, route }) {
     useEffect(() => {
         const fetchSubaccountDetails = async () => {
             try {
-                const response = await axios.post(`${api}fetch-subaccount`, {
-                    subaccountCode, // Send subaccountCode to the backend for fetching subaccount details
+                const response = await fetch(`${api}fetch-subaccount`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        subaccountCode, // Send subaccountCode to the backend for fetching subaccount details
+                    }),
                 });
+                const responseData = await response.json();
     
-                if (response.data.success) {
-                    setSubaccountDetails(response.data.data);
-                    console.log("Subaccount details fetched successfully:", response.data);
+                if (responseData.success) {
+                    setSubaccountDetails(responseData.data);
+                    console.log("Subaccount details fetched successfully:", responseData);
 
                     // Now send this data to store in the database
-                    const { data } = response.data;
+                    const { data } = responseData;
                     const subaccountData = {
                         user_id: user_id, // Assuming user_id is passed via route params
                         subaccount_code: data.subaccount_code,
@@ -40,9 +44,14 @@ export default function SuccessPage ({ navigation, route }) {
                     };
 
                     // Store subaccount details in the database
-                    const storeResponse = await axios.post(`${api}store-subaccount`, subaccountData);
-                    if (storeResponse.data.success) {
-                        console.log("Subaccount data saved successfully:", storeResponse.data);
+                    const storeResponse = await fetch(`${api}store-subaccount`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(subaccountData),
+                    });
+                    const storeData = await storeResponse.json();
+                    if (storeData.success) {
+                        console.log("Subaccount data saved successfully:", storeData);
                     } else {
                         setError("Failed to store subaccount details.");
                     }
@@ -51,7 +60,7 @@ export default function SuccessPage ({ navigation, route }) {
                     setError("Failed to fetch subaccount details.");
                 }
             } catch (err) {
-                setError(err.response?.data?.error || "Error fetching subaccount details.");
+                setError(err.message || "Error fetching subaccount details.");
             } finally {
                 setLoading(false);
             }
@@ -65,21 +74,26 @@ export default function SuccessPage ({ navigation, route }) {
     useEffect(() => {
         const validateBankAccount = async () => {
             try {
-                const response = await axios.post(`${api}verify-subaccount`, {
-                    bank_code,
-                    country_code,
-                    account_number,
-                    subaccountCode,
+                const response = await fetch(`${api}verify-subaccount`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        bank_code,
+                        country_code,
+                        account_number,
+                        subaccountCode,
+                    }),
                 });
+                const responseData = await response.json();
 
-                if (response.data.success) {
-                    setBankValidation(response.data);
-                    console.log("Bank Validation Success:", response.data);
+                if (responseData.success) {
+                    setBankValidation(responseData);
+                    console.log("Bank Validation Success:", responseData);
                 } else {
                     setError("Bank validation failed.");
                 }
             } catch (err) {
-                setError(err.response?.data?.error || "Error validating bank account.");
+                setError(err.message || "Error validating bank account.");
             } finally {
                 setLoading(false);
             }

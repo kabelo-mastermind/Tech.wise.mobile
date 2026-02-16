@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
-import axios from 'axios';
 import { api } from '../../api';
 
 const UpdateAccount = ({ route, navigation }) => {
@@ -18,19 +17,24 @@ const UpdateAccount = ({ route, navigation }) => {
     useEffect(() => {
         const fetchSubaccountDetails = async () => {
             try {
-                const response = await axios.post(api + 'fetch-subaccount', {
-                    subaccountCode: subaccountCode,  // Replace with dynamic subaccount code if needed
+                const response = await fetch(api + 'fetch-subaccount', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        subaccountCode: subaccountCode,  // Replace with dynamic subaccount code if needed
+                    }),
                 });
+                const data = await response.json();
 
-                if (response.data.success) {
-                    setSubaccountDetails(response.data.data);
+                if (data.success) {
+                    setSubaccountDetails(data.data);
                     setBusinessName(response.data.data.business_name || '');
                     setDescription(response.data.data.description || '');
                 } else {
                     setError('Failed to fetch subaccount details.');
                 }
             } catch (err) {
-                setError(err.response?.data?.error || 'Error fetching subaccount details.');
+                setError(err.message || 'Error fetching subaccount details.');
             } finally {
                 setLoading(false);
             }
@@ -43,21 +47,23 @@ const UpdateAccount = ({ route, navigation }) => {
     const handleUpdateSubaccount = async () => {
         setIsUpdating(true);
         try {
-            const response = await axios.put(
+            const response = await fetch(
                 api + 'update-subaccount/' + subaccountCode,
                 {
-                    business_name: businessName,
-                    description: description,
-                },
-                {
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         Authorization: `Bearer YOUR_SECRET_KEY`, // Replace with your actual secret key
                     },
+                    body: JSON.stringify({
+                        business_name: businessName,
+                        description: description,
+                    }),
                 }
             );
+            const data = await response.json();
 
-            if (response.data.success) {
+            if (data.success) {
                 alert('Subaccount updated successfully!');
             } else {
                 setError('Failed to update subaccount.');

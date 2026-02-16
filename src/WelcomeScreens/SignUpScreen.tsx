@@ -20,7 +20,6 @@ import { auth, db } from '../../FirebaseConfig';
 import { doc, setDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification, signOut } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 import { api } from '../../api';
 import { LinearGradient } from 'expo-linear-gradient'; // If available in your project
 import { showToast } from '../constants/showToast';
@@ -66,12 +65,16 @@ const SignUpScreen = ({ navigation }) => {
       });
 
       // Send user data to your backend
-      await axios.post(api + "register", {
-        name,
-        email,
-        // password,
-        role: "driver",
-        user_uid: response.user.uid,
+      await fetch(api + "register", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          email,
+          // password,
+          role: "driver",
+          user_uid: response.user.uid,
+        }),
       });
 
       // Send email verification

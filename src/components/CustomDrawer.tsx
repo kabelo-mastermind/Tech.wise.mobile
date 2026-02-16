@@ -5,10 +5,9 @@ import React, { useEffect, useCallback, useState } from "react"
 import { View, Text, TouchableOpacity, Animated, StyleSheet, Pressable, ScrollView } from "react-native"
 
 import { useSelector } from "react-redux"
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Icon from "react-native-vector-icons/MaterialCommunityIcons"
-
-import axios from "axios"
 
 import { api } from "../../api"
 import { Image } from "react-native"
@@ -53,13 +52,8 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
 
     const fetchCustomerRating = async () => {
       try {
-        const res = await axios.get(`${api}/tripHistory/${user_id}`, {
-          params: {
-            driverId: user_id, // pass the driver's ID here
-          },
-        });
-
-        const trips = res.data;
+        const res = await fetch(`${api}/tripHistory/${user_id}?driverId=${user_id}`);
+        const trips = await res.json();
 
         // Filter out null, undefined, or 0 ratings
         const ratedTrips = trips.filter(
@@ -73,11 +67,30 @@ const CustomDrawer: React.FC<CustomDrawerProps> = ({ isOpen, toggleDrawer, navig
           );
           const avg = total / ratedTrips.length;
           setRating(avg.toFixed(1)); // optional: round to 1 decimal
+          
+          // Cache the rating
+          await AsyncStorage.setItem(`cachedRating_${user_id}`, avg.toFixed(1));
+          console.log("✅ Rating cached:", avg.toFixed(1));
         } else {
-          setRating(0); // match SQL’s "0" default
+          setRating(0); // match SQL's "0" default
+          await AsyncStorage.setItem(`cachedRating_${user_id}`, "0");
         }
       } catch (err) {
         console.log("Error fetching customer rating:", err);
+        
+        // Try to load cached rating on network failure
+        try {
+          const cachedRating = await AsyncStorage.getItem(`cachedRating_${user_id}`);
+          if (cachedRating) {
+            setRating(cachedRating);
+            console.log("📱 Loaded cached rating (offline mode):", cachedRating);
+          } else {
+            setRating(0);
+          }
+        } catch (cacheError) {
+          console.error("Error loading cached rating:", cacheError);
+          setRating(0);
+        }
       }
     }
 

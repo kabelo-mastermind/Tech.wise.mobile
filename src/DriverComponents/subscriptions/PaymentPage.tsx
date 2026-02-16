@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Button, Alert, StyleSheet } from "react-native";
 import { WebView } from "react-native-webview";
-import axios from "axios";
 import { useSelector } from "react-redux";
 
 const API_BASE_URL = "http://10.0.2.2:3000/api";
@@ -42,7 +41,7 @@ const PaymentPage = ({ route, navigation }) => {
         Alert.alert("Error", "Failed to initialize transaction.");
       }
     } catch (error) {
-      console.error("Axios Error:", error.response?.data || error.message);
+      console.error("Payment Error:", error.message);
       Alert.alert("Error", "Something went wrong. Please try again.");
     } finally {
       setIsProcessing(false);

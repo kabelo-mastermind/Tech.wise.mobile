@@ -24,7 +24,8 @@
           "fetch"
         ],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses background location to track your trip and provide real-time updates.",
-        "NSLocationWhenInUseUsageDescription": "This app uses your location to track your trip and provide navigation."
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to track your trip and provide navigation.",
+        "NSFaceIDUsageDescription": "This app uses Face ID or Touch ID to authenticate drivers before going online for security purposes."
       },
       "config": {
         "googleMapsApiKey": "AIzaSyCW_3yyD7H0125SOsP-vABHG6BrSm47j-w"
@@ -45,7 +46,9 @@
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.WAKE_LOCK",
-        "android.permission.FOREGROUND_SERVICE_LOCATION"
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ],
       "config": {
         "googleMaps": {

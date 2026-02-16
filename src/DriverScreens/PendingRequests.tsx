@@ -1,12 +1,17 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { StyleSheet, View, Dimensions, TouchableOpacity, BackHandler, Text, Animated, Linking, Alert } from "react-native"
+import { StyleSheet, View, Dimensions, TouchableOpacity, BackHandler, Text, Animated, Linking, Alert, Platform, AppState } from "react-native"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Icon } from "react-native-elements"
 import { colors } from "../global/styles"
 import MapComponent from "../components/MapComponent"
 import * as Location from "expo-location"
 import * as TaskManager from 'expo-task-manager';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as Notifications from 'expo-notifications';
+import { Audio } from 'expo-av';
+import Svg, { Circle } from 'react-native-svg';
 import { SafeAreaView } from "react-native-safe-area-context"
 import { db } from "../../FirebaseConfig"
 import { collection, query, where, onSnapshot, doc, setDoc } from "firebase/firestore"
@@ -21,7 +26,6 @@ import {
   listenCancelTrip,
   listenToChatMessages,
 } from "../configSocket/socketConfig" // import your socket functions
-import axios from "axios"
 import { api } from "../../api"
 import TripCancellationModal from "../components/TripCancelationModal"
 import { setTripData } from "../redux/actions/tripActions"
@@ -36,6 +40,10 @@ import TripRequestModal from "../DriverComponents/Modals/TripRequestModal"
 const SCREEN_HEIGHT = Dimensions.get("window").height
 const SCREEN_WIDTH = Dimensions.get("window").width
 const BUTTON_WIDTH = 140; // optional for consistency
+const BELL_RING_SIZE = 64;
+const BELL_RING_STROKE = 4;
+const BELL_RING_RADIUS = (BELL_RING_SIZE - BELL_RING_STROKE) / 2;
+const BELL_RING_CIRCUMFERENCE = 2 * Math.PI * BELL_RING_RADIUS;
 
 // Define theme colors
 const THEME = {
@@ -72,15 +80,27 @@ export default function PendingRequests({ navigation, route }) {
         const { locations } = data;
         const location = locations[0];
 
-        if (location && user_id) { // Check if user_id is available
+        if (location) {
           const { latitude, longitude } = location.coords;
+          console.log('📍 Background location update received:', { latitude, longitude });
 
-          // Update driver location in state
-          setDriverLocation({ latitude, longitude });
-
-          // Save to Firebase
+          // Save to Firebase only if user_id is valid AND driver is online
           try {
-            const driverLocationRef = doc(db, "driver_locations", user_id.toString());
+            // Get user_id from the component - may be null in background context
+            if (!user_id || user_id === null || user_id === undefined) {
+              console.warn('⚠️ user_id is not available, skipping Firebase location save');
+              return;
+            }
+            
+            // Check if driver is online from AsyncStorage
+            const isOnlineStatus = await AsyncStorage.getItem(`driverOnlineStatus_${user_id}`);
+            if (isOnlineStatus !== 'online') {
+              console.log('🚫 Driver is offline, skipping location save to Firebase');
+              return;
+            }
+            
+            console.log('💾 Saving background driver location to Firebase for user:', user_id);
+            const driverLocationRef = doc(db, "driver_locations", String(user_id));
             await setDoc(
               driverLocationRef,
               {
@@ -92,9 +112,9 @@ export default function PendingRequests({ navigation, route }) {
               },
               { merge: true },
             );
-            console.log('Background location saved successfully!');
+            console.log('✅ Background location saved successfully to Firebase!', { latitude, longitude, user_id });
           } catch (error) {
-            console.log("Error saving background driver location:", error);
+            console.error("❌ Error saving background driver location:", error);
           }
         }
       }
@@ -186,6 +206,41 @@ export default function PendingRequests({ navigation, route }) {
   const [distanceTraveld, setDistanceTraveld] = useState("N/A")
   const [messages, setMessages] = useState([])
 
+  // Restore trip state from cache on component mount
+  useEffect(() => {
+    const restoreTripState = async () => {
+      if (!user_id) return;
+
+      try {
+        const cachedTripState = await AsyncStorage.getItem(`activeTripState_${user_id}`);
+        if (cachedTripState) {
+          const tripState = JSON.parse(cachedTripState);
+          console.log('🔄 Restoring trip state from cache:', tripState);
+
+          // Restore trip state
+          setTripStarted(tripState.tripStarted || false);
+          setShowStartButton(tripState.showStartButton || false);
+          setShowEndButton(tripState.showEndButton || false);
+          setUserOrigin(tripState.userOrigin || { latitude: 0, longitude: 0 });
+          setUserDestination(tripState.userDestination || { latitude: 0, longitude: 0 });
+          setEta(tripState.eta || "N/A");
+          setDistance(tripState.distance || "N/A");
+          
+          // Restore background tracking if trip was ongoing
+          if (tripState.tripStarted && !isBackgroundTrackingActive) {
+            await startBackgroundLocationTracking();
+          }
+
+          console.log('✅ Trip state restored successfully');
+        }
+      } catch (error) {
+        console.error('❌ Error restoring trip state:', error);
+      }
+    };
+
+    restoreTripState();
+  }, [user_id]);
+
   // console.log("Trip ID from Redux:", trip_id);
   // Timer state and ref
   const [secondsOnline, setSecondsOnline] = useState(0)
@@ -193,18 +248,66 @@ export default function PendingRequests({ navigation, route }) {
   const [loading, setLoading] = useState(true)
 
   const [remainingTime, setRemainingTime] = useState(0)
+  const [bellCountdown, setBellCountdown] = useState(0)
   const [userOrigin, setUserOrigin] = useState({ latitude: 0, longitude: 0 });
   const [userDestination, setUserDestination] = useState({ latitude: 0, longitude: 0 });
   const [showCancelAlert, setShowCancelAlert] = useState(false);
 
+  // Cache trip state whenever it changes
   useEffect(() => {
-    axios
-      .get(api + `/driver/remainingTime/${user_id}`)
-      .then((res) => {
-        setRemainingTime(res.data.remainingSeconds)
-        startCountdown(res.data.remainingSeconds)
+    const cacheTripState = async () => {
+      if (!user_id) return;
+
+      // Only cache if there's an active trip (accepted or ongoing)
+      if (tripStatusAccepted === 'accepted' || tripStatusAccepted === 'on-going' || tripStarted) {
+        const tripState = {
+          tripStarted,
+          showStartButton,
+          showEndButton,
+          userOrigin,
+          userDestination,
+          eta,
+          distance,
+          tripData: selectedRequest,
+          tripStatusAccepted,
+          timestamp: new Date().toISOString(),
+        };
+
+        await AsyncStorage.setItem(`activeTripState_${user_id}`, JSON.stringify(tripState));
+        console.log('💾 Trip state cached:', { tripStarted, tripStatusAccepted });
+      }
+    };
+
+    cacheTripState();
+  }, [tripStarted, showStartButton, showEndButton, userOrigin, userDestination, eta, distance, tripStatusAccepted, user_id]);
+
+  useEffect(() => {
+    fetch(api + `/driver/remainingTime/${user_id}`)
+      .then((res) => res.json())
+      .then(async (data) => {
+        setRemainingTime(data.remainingSeconds)
+        startCountdown(data.remainingSeconds)
+        
+        // Cache remaining time
+        await AsyncStorage.setItem(`cachedRemainingTime_${user_id}`, JSON.stringify(data))
+        console.log('Remaining time cached successfully')
       })
-      .catch((err) => console.error(err, "-----------------"))
+      .catch(async (err) => {
+        console.error(err, "-----------------")
+        
+        // Load from cache on network failure
+        try {
+          const cached = await AsyncStorage.getItem(`cachedRemainingTime_${user_id}`)
+          if (cached) {
+            const cachedData = JSON.parse(cached)
+            setRemainingTime(cachedData.remainingSeconds)
+            startCountdown(cachedData.remainingSeconds)
+            console.log('Loaded remaining time from cache (offline mode)')
+          }
+        } catch (cacheErr) {
+          console.error('Error loading cached remaining time:', cacheErr)
+        }
+      })
   }, [user_id])
   // Timer functions
 
@@ -220,6 +323,33 @@ export default function PendingRequests({ navigation, route }) {
     }, 1000)
   }
   const timerRef = useRef(null) // ref to hold the timer id
+  const lastTripCountRef = useRef(0) // ref to persist trip count across re-renders
+  const bellTimerRef = useRef(null)
+  const foregroundSoundRef = useRef(null)
+  const foregroundSoundIntervalRef = useRef(null)
+  const SOUND_REPEAT_MS = 6000
+
+  const getRemainingSecondsFromTrip = (trip) => {
+    if (trip?.currentDate) {
+      const tripTime = new Date(trip.currentDate).getTime();
+      const ageInSeconds = (Date.now() - tripTime) / 1000;
+      return Math.max(0, Math.floor(40 - ageInSeconds));
+    }
+    return 40;
+  };
+
+  const updateBellCountdownFromTrips = (pendingTrips) => {
+    if (!pendingTrips || pendingTrips.length === 0) {
+      setBellCountdown(0);
+      return;
+    }
+
+    const latestRemaining = pendingTrips.reduce((maxRemaining, trip) => {
+      return Math.max(maxRemaining, getRemainingSecondsFromTrip(trip));
+    }, 0);
+
+    setBellCountdown(latestRemaining);
+  };
 
   useEffect(() => {
     if (isOnline) {
@@ -230,6 +360,37 @@ export default function PendingRequests({ navigation, route }) {
       return () => clearInterval(timerRef.current)
     }
   }, [isOnline]) // depend on isOnline
+
+  useEffect(() => {
+    if (bellCountdown <= 0) {
+      if (bellTimerRef.current) {
+        clearInterval(bellTimerRef.current)
+        bellTimerRef.current = null
+      }
+      return
+    }
+
+    if (bellTimerRef.current) return
+
+    bellTimerRef.current = setInterval(() => {
+      setBellCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(bellTimerRef.current)
+          bellTimerRef.current = null
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (bellTimerRef.current) {
+        clearInterval(bellTimerRef.current)
+        bellTimerRef.current = null
+      }
+    }
+  }, [bellCountdown])
+
 
 
   const stopTimer = () => {
@@ -244,10 +405,129 @@ export default function PendingRequests({ navigation, route }) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      if (foregroundSoundIntervalRef.current) {
+        clearInterval(foregroundSoundIntervalRef.current)
+        foregroundSoundIntervalRef.current = null
+      }
+      if (foregroundSoundRef.current) {
+        foregroundSoundRef.current.unloadAsync()
+        foregroundSoundRef.current = null
+      }
     };
   }, []);
 
+  const playForegroundSound = async () => {
+    try {
+      if (foregroundSoundRef.current) {
+        await foregroundSoundRef.current.unloadAsync()
+        foregroundSoundRef.current = null
+      }
+
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/sounds/trip_alert.wav'),
+        { shouldPlay: true }
+      )
+
+      foregroundSoundRef.current = sound
+    } catch (error) {
+      console.error('❌ Error playing foreground sound:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (AppState.currentState !== 'active') {
+      if (foregroundSoundIntervalRef.current) {
+        clearInterval(foregroundSoundIntervalRef.current)
+        foregroundSoundIntervalRef.current = null
+      }
+      return
+    }
+
+    if (bellCountdown > 0 && !foregroundSoundIntervalRef.current) {
+      playForegroundSound()
+      foregroundSoundIntervalRef.current = setInterval(() => {
+        if (bellCountdown <= 0) {
+          clearInterval(foregroundSoundIntervalRef.current)
+          foregroundSoundIntervalRef.current = null
+          return
+        }
+        playForegroundSound()
+      }, SOUND_REPEAT_MS)
+    }
+
+    if (bellCountdown <= 0 && foregroundSoundIntervalRef.current) {
+      clearInterval(foregroundSoundIntervalRef.current)
+      foregroundSoundIntervalRef.current = null
+    }
+  }, [bellCountdown])
+
   //go online button and offline button
+
+  // Helper function to open security settings
+  const openSecuritySettings = () => {
+    if (Platform.OS === 'android') {
+      Linking.sendIntent('android.settings.SECURITY_SETTINGS');
+    } else {
+      // iOS doesn't allow direct access to security settings
+      Linking.openSettings();
+    }
+  };
+
+  // Biometric authentication function
+  const authenticateDriver = async () => {
+    try {
+      // Try to get supported authentication types
+      const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+      console.log('🔐 Supported authentication types:', supportedTypes);
+
+      // Check if any authentication is available (biometric OR device credentials)
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const securityLevel = await LocalAuthentication.getEnrolledLevelAsync();
+      console.log('🔐 Hardware available:', hasHardware, '| Security level:', securityLevel);
+
+      // Attempt authentication directly (works with biometric, PIN, pattern, password)
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: '🔐 Authenticate to go online',
+        fallbackLabel: 'Use Device Credentials',
+        disableDeviceFallback: false, // Allow fallback to PIN/pattern/password
+        cancelLabel: 'Cancel',
+      });
+
+      if (result.success) {
+        console.log('✅ Authentication successful');
+        return true;
+      } else if (result.error === 'user_cancel') {
+        console.log('❌ User cancelled authentication');
+        return false;
+      } else if (result.error === 'not_enrolled' || result.error === 'lockout' || result.error === 'passcode_not_set') {
+        Alert.alert(
+          '🔒 No Authentication Set Up',
+          'For security purposes, you must set up device authentication before going online.\n\nPlease set up:\n• Fingerprint\n• Face ID\n• PIN, pattern, or password\n\nin your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: openSecuritySettings }
+          ]
+        );
+        return false;
+      } else {
+        console.log('❌ Authentication failed:', result.error);
+        Alert.alert(
+          'Authentication Failed',
+          'You must authenticate to go online as a driver.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Authentication error:', error);
+      Alert.alert(
+        'Authentication Error',
+        'An error occurred during authentication. Please try again.',
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+  };
 
   const handleGoOffline = async () => {
     // Use session_id and user_id from above
@@ -260,38 +540,58 @@ export default function PendingRequests({ navigation, route }) {
       return;
     }
 
+    // Prevent going offline if there's an active trip
+    if (tripStatusAccepted === 'accepted' || tripStatusAccepted === 'on-going' || tripStarted) {
+      Alert.alert(
+        'Active Trip',
+        'You cannot go offline while you have an active or ongoing trip. Please complete or cancel the trip first.',
+        [{ text: 'OK' }]
+      );
+      console.log('🚫 Cannot go offline - active trip exists');
+      return;
+    }
+
     try {
       // Fetch current driver state before updating
       console.log("Fetching current driver state...");
 
-      const fetchResponse = await axios.get(`${api}getDriverState?userId=${user_id}`);
-      const currentState = fetchResponse.data.state;
+      const fetchResponse = await fetch(`${api}getDriverState?userId=${user_id}`);
+      const fetchData = await fetchResponse.json();
+      const currentState = fetchData.state;
 
       if (currentState === "online") {
         const newState = "offline";
         console.log("Driver is online, setting to offline...");
 
-        const updateResponse = await axios.put(`${api}updateDriverState`, {
-          user_id,
-          state: newState,
-          onlineDuration: secondsOnline,
-          last_online_timestamp: new Date().toISOString(),
+        const updateResponse = await fetch(`${api}updateDriverState`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id,
+            state: newState,
+            onlineDuration: secondsOnline,
+            last_online_timestamp: new Date().toISOString(),
+          }),
         });
 
-        if (updateResponse.status === 200) {
+        if (updateResponse.ok) {
           console.log("Driver state updated to offline.");
 
           // ✅ ADD: Update driver_session end_time by session_id
           try {
             console.log("Updating driver_session end_time...");
 
-            const sessionUpdateResponse = await axios.put(`${api}endDriverSession`, {
-              session_id, // pass session_id
-              end_time: new Date().toISOString(),
-              workedSeconds: secondsOnline,
+            const sessionUpdateResponse = await fetch(`${api}endDriverSession`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                session_id, // pass session_id
+                end_time: new Date().toISOString(),
+                workedSeconds: secondsOnline,
+              }),
             });
 
-            if (sessionUpdateResponse.status === 200) {
+            if (sessionUpdateResponse.ok) {
               console.log("Driver session end_time stored successfully for session_id:", session_id);
             } else {
               console.warn("Failed to store end_time in driver_session. Status:", sessionUpdateResponse.status);
@@ -302,6 +602,14 @@ export default function PendingRequests({ navigation, route }) {
 
           setIsOnline(false);
           stopTimer(); // Stop the timer when going offline
+          
+          // Store offline status in AsyncStorage
+          await AsyncStorage.setItem(`driverOnlineStatus_${user_id}`, 'offline');
+          console.log('📴 Driver status stored as offline in AsyncStorage');
+          
+          // Clear trip cache when going offline (no active trips at this point)
+          await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+          console.log('🗑️ Trip state cache cleared');
 
           console.log("Driver is now offline navigating.", secondsOnline);
 
@@ -316,16 +624,36 @@ export default function PendingRequests({ navigation, route }) {
           console.warn("Failed to update driver state. Status:", updateResponse.status);
         }
       } else {
-        // If driver is offline, set them to online
-        const updateResponse = await axios.put(`${api}updateDriverState`, {
-          user_id,
-          state: "online",
-          onlineDuration: 0,
+        // If driver is offline, authenticate before going online
+        console.log('🔐 Attempting authentication before going online...');
+        const isAuthenticated = await authenticateDriver();
+
+        if (!isAuthenticated) {
+          console.log('🚫 Authentication failed - cannot go online');
+          return; // Exit if authentication fails
+        }
+
+        console.log('✅ Authentication successful - proceeding to go online');
+
+        // If driver is offline and authenticated, set them to online
+        const updateResponse = await fetch(`${api}updateDriverState`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id,
+            state: "online",
+            onlineDuration: 0,
+          }),
         });
 
-        if (updateResponse.status === 200) {
+        if (updateResponse.ok) {
           setIsOnline(true);
           setSecondsOnline(0);
+          
+          // Store online status in AsyncStorage
+          await AsyncStorage.setItem(`driverOnlineStatus_${user_id}`, 'online');
+          console.log('📶 Driver status stored as online in AsyncStorage');
+          
           console.log("Driver is now online.");
           navigation.navigate("PendingRequests", { user_id, session_id });
         } else if (updateResponse.status === 403) {
@@ -333,7 +661,7 @@ export default function PendingRequests({ navigation, route }) {
         }
       }
     } catch (error) {
-      console.error("Failed to update driver status:", error.response?.data || error.message);
+      console.error("Failed to update driver status:", error.message);
     }
   };
 
@@ -353,19 +681,129 @@ export default function PendingRequests({ navigation, route }) {
 
   // Extracting user origin and destination from tripData
   useEffect(() => {
-    if (selectedRequest) {
-      setUserOrigin({
-        latitude: selectedRequest.pickUpLatitude ?? 0,
-        longitude: selectedRequest.pickUpLongitude ?? 0,
-      });
-      setUserDestination({
-        latitude: selectedRequest.dropOffLatitude ?? 0,
-        longitude: selectedRequest.dropOffLongitude ?? 0,
-      });
+    if (!selectedRequest) {
+      setUserOrigin({ latitude: 0, longitude: 0 });
+      setUserDestination({ latitude: 0, longitude: 0 });
+      setShowStartButton(false);
+      return;
     }
+
+    const toNumber = (value) => {
+      const parsed = typeof value === "string" ? parseFloat(value) : value;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const pickupLatitude = toNumber(
+      selectedRequest.pickUpLatitude ??
+      selectedRequest.pickupLatitude ??
+      selectedRequest.pickUpCoordinates?.latitude ??
+      selectedRequest.pickupCoordinates?.latitude
+    );
+    const pickupLongitude = toNumber(
+      selectedRequest.pickUpLongitude ??
+      selectedRequest.pickupLongitude ??
+      selectedRequest.pickUpCoordinates?.longitude ??
+      selectedRequest.pickupCoordinates?.longitude
+    );
+    const dropoffLatitude = toNumber(
+      selectedRequest.dropOffLatitude ??
+      selectedRequest.dropoffLatitude ??
+      selectedRequest.dropOffCoordinates?.latitude ??
+      selectedRequest.dropoffCoordinates?.latitude
+    );
+    const dropoffLongitude = toNumber(
+      selectedRequest.dropOffLongitude ??
+      selectedRequest.dropoffLongitude ??
+      selectedRequest.dropOffCoordinates?.longitude ??
+      selectedRequest.dropoffCoordinates?.longitude
+    );
+
+    setUserOrigin({
+      latitude: pickupLatitude,
+      longitude: pickupLongitude,
+    });
+    setUserDestination({
+      latitude: dropoffLatitude,
+      longitude: dropoffLongitude,
+    });
+
+    if (tripStatusAccepted !== "accepted" && !tripStarted) {
+      setShowStartButton(false);
+    }
+
     console.log("user destination ---------------", userDestination)
+  }, [selectedRequest, tripStatusAccepted, tripStarted]);
+
+  const getTripStatus = (trip) => {
+    const statuses = trip?.statuses;
+    if (Array.isArray(statuses) && statuses.length > 0) {
+      const lastStatus = statuses[statuses.length - 1];
+      if (typeof lastStatus === 'string') return lastStatus;
+      return lastStatus?.status || null;
+    }
+    if (typeof statuses === 'string') return statuses;
+    return null;
+  };
+
+  const isTripPending = (trip) => getTripStatus(trip) === 'pending';
+
+  useEffect(() => {
+    if (!selectedRequest) return;
+    const statusFromSelected = getTripStatus(selectedRequest);
+    if (statusFromSelected) {
+      setTripStatusAccepted(statusFromSelected);
+    }
   }, [selectedRequest]);
 
+
+  // Load initial pending trips count on mount
+  useEffect(() => {
+    const loadInitialPendingTrips = async () => {
+      if (!user_id || !isOnline) return;
+
+      try {
+        console.log('🔍 Loading initial pending trips count...');
+        const response = await fetch(`${api}/driverTrips?driverId=${user_id}`);
+        const data = await response.json();
+
+        const tripsList = data.trips || [];
+        const now = new Date().getTime();
+        
+        // Filter for pending trips only AND not older than 40 seconds
+        const pendingTrips = tripsList.filter(trip => {
+          if (!isTripPending(trip)) return false;
+          
+          // Check if trip is not older than 40 seconds
+          if (trip.currentDate) {
+            const tripTime = new Date(trip.currentDate).getTime();
+            const ageInSeconds = (now - tripTime) / 1000;
+            if (ageInSeconds > 40) {
+              console.log(`⏰ Trip ${trip.id} expired (${Math.round(ageInSeconds)}s old)`);
+              return false;
+            }
+          }
+          
+          return true;
+        });
+
+        const pendingCount = pendingTrips.length;
+        updateBellCountdownFromTrips(pendingTrips);
+        
+        if (pendingCount > 0) {
+          setNotificationCount(pendingCount);
+          lastTripCountRef.current = pendingCount; // Update ref to prevent double counting
+          console.log(`✅ Initial pending trips count: ${pendingCount}`);
+        } else {
+          lastTripCountRef.current = 0;
+          setNotificationCount(0);
+        }
+      } catch (error) {
+        console.error('❌ Error loading initial pending trips:', error);
+      }
+    };
+
+    loadInitialPendingTrips();
+  }, [user_id, isOnline]);
 
   // socket notifications
   useEffect(() => {
@@ -374,21 +812,44 @@ export default function PendingRequests({ navigation, route }) {
     const userType = "driver"
     connectSocket(user_id, userType) // Ensure the driver is connected
 
-    listenToNewTripRequests((tripData) => {
+    listenToNewTripRequests(async (tripData) => {
       if (!tripData) {
         console.error("❌ tripData is undefined or null on frontend!")
         return
       }
 
-      // Show an alert
-      alert(`New Trip Request Received!`)
-      // console.log("Trip request received::::::::::::::---------:", tripData)
+      // Refresh notification count based on latest pending trips
+      try {
+        const response = await fetch(`${api}/driverTrips?driverId=${user_id}`);
+        const data = await response.json();
+        const tripsList = data.trips || [];
+        const now = new Date().getTime();
 
-      // Increment notification count - ensure this runs
-      setNotificationCount((prevCount) => {
-        console.log("Incrementing notification count from", prevCount, "to", prevCount + 1)
-        return prevCount + 1
-      })
+        const pendingTrips = tripsList.filter(trip => {
+          if (!isTripPending(trip)) return false;
+
+          if (trip.currentDate) {
+            const tripTime = new Date(trip.currentDate).getTime();
+            const ageInSeconds = (now - tripTime) / 1000;
+            if (ageInSeconds > 40) {
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        const currentTripCount = pendingTrips.length;
+        updateBellCountdownFromTrips(pendingTrips);
+        setNotificationCount(currentTripCount);
+        lastTripCountRef.current = currentTripCount;
+        console.log(`🔔 Notification count refreshed (socket): ${currentTripCount}`);
+      } catch (error) {
+        console.error('❌ Error refreshing pending trips count (socket):', error);
+      }
+
+      // Play notification sound
+      playNotificationSound();
 
       // Store the trip data
       setTripRequest(tripData)
@@ -403,9 +864,13 @@ export default function PendingRequests({ navigation, route }) {
     })
     console.log("Trip Request Socket Data::::::::::::::::::::", tripRequestSocket);
 
-  listenCancelTrip((tripData) => {
+  listenCancelTrip(async (tripData) => {
+  // Clear trip state cache when customer cancels
+  await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+  console.log('🗑️ Trip cache cleared - customer cancelled trip');
+  
   // Clear all state when trip is canceled
-  clearTripState();
+  await clearTripState();
   handleUpdateDriverState();
   setShowCancelAlert(true);
 });
@@ -425,6 +890,93 @@ export default function PendingRequests({ navigation, route }) {
       );
     })
   }, [user_id])
+
+  // Polling mechanism to check for pending trips (backup for when socket is offline)
+  useEffect(() => {
+    // Don't poll if driver is offline or has an active trip
+    if (!user_id || !isOnline || tripStatusAccepted === 'accepted' || tripStatusAccepted === 'on-going') {
+      return;
+    }
+
+    let pollingInterval = null;
+
+    const checkForPendingTrips = async () => {
+      try {
+        console.log('🔍 Checking for pending trip requests...');
+        const response = await fetch(`${api}/driverTrips?driverId=${user_id}`);
+        const data = await response.json();
+
+        const tripsList = data.trips || [];
+        const now = new Date().getTime();
+        
+        // Filter for pending trips only (not accepted, on-going, completed, or canceled) AND not older than 40 seconds
+        const pendingTrips = tripsList.filter(trip => {
+          if (!isTripPending(trip)) return false;
+          
+          // Check if trip is not older than 40 seconds
+          if (trip.currentDate) {
+            const tripTime = new Date(trip.currentDate).getTime();
+            const ageInSeconds = (now - tripTime) / 1000;
+            if (ageInSeconds > 40) {
+              console.log(`⏰ Trip ${trip.id} expired (${Math.round(ageInSeconds)}s old)`);
+              return false;
+            }
+          }
+          
+          return true;
+        });
+
+        const currentTripCount = pendingTrips.length;
+        updateBellCountdownFromTrips(pendingTrips);
+        
+        // Only update if trip count changed (use ref to persist across re-renders)
+        if (currentTripCount !== lastTripCountRef.current) {
+          console.log(`📊 Pending trips count changed: ${lastTripCountRef.current} → ${currentTripCount}`);
+          
+          if (currentTripCount > lastTripCountRef.current) {
+            // New trip(s) detected
+            const newTripsCount = currentTripCount - lastTripCountRef.current;
+            setNotificationCount((prevCount) => {
+              const newCount = prevCount + newTripsCount;
+              console.log(`🔔 Notification count updated: ${prevCount} → ${newCount}`);
+              return newCount;
+            });
+            
+            // Play notification sound
+            playNotificationSound();
+            
+            // Trigger bell animation
+            animateBell();
+          } else if (currentTripCount < lastTripCountRef.current) {
+            // Trip(s) were handled (accepted/rejected/expired)
+            const decreaseCount = lastTripCountRef.current - currentTripCount;
+            setNotificationCount((prevCount) => {
+              const newCount = Math.max(0, prevCount - decreaseCount);
+              console.log(`🔔 Notification count decreased: ${prevCount} → ${newCount}`);
+              return newCount;
+            });
+          }
+          
+          lastTripCountRef.current = currentTripCount;
+        }
+      } catch (error) {
+        console.error('❌ Error checking for pending trips:', error);
+      }
+    };
+
+    // Initial check
+    checkForPendingTrips();
+
+    // Poll every 5 seconds
+    pollingInterval = setInterval(checkForPendingTrips, 5000);
+
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        console.log('🛑 Stopped polling for pending trips');
+      }
+    };
+  }, [user_id, isOnline, tripStatusAccepted]);
 
   //setting user origin and destination from socket
   useEffect(() => {
@@ -470,9 +1022,22 @@ export default function PendingRequests({ navigation, route }) {
           async (position) => {
             const { latitude, longitude } = position.coords;
             setDriverLocation({ latitude, longitude });
+            console.log('📍 Foreground location update received on PendingRequests screen:', { latitude, longitude });
 
             try {
-              const driverLocationRef = doc(db, "driver_locations", user_id.toString());
+              if (!user_id || user_id === null || user_id === undefined) {
+                console.warn('⚠️ user_id is not available, skipping Firebase location save');
+                return;
+              }
+              
+              // Only save to Firebase if driver is online
+              if (!isOnline) {
+                console.log('🚫 Driver is offline, skipping location save to Firebase');
+                return;
+              }
+              
+              console.log('💾 Saving foreground driver location to Firebase for user:', user_id);
+              const driverLocationRef = doc(db, "driver_locations", String(user_id));
               await setDoc(
                 driverLocationRef,
                 {
@@ -484,8 +1049,9 @@ export default function PendingRequests({ navigation, route }) {
                 },
                 { merge: true },
               );
+              console.log('✅ Foreground location saved successfully to Firebase!', { latitude, longitude, user_id, timestamp: new Date().toISOString() });
             } catch (error) {
-              console.log("Error saving driver location:", error);
+              console.error("❌ Error saving driver location:", error);
             }
           },
         );
@@ -574,6 +1140,75 @@ export default function PendingRequests({ navigation, route }) {
   const [cancelReason, setCancelReason] = useState("")
   const [tripStatusAccepted, setTripStatusAccepted] = useState(null)
 
+  // Configure notifications
+  useEffect(() => {
+    const configureNotifications = async () => {
+      try {
+        console.log('🔔 Configuring notifications...');
+        
+        // Set notification handler
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+          }),
+        });
+
+        // Request permissions
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') {
+          console.warn('⚠️ Notification permissions not granted');
+        } else {
+          console.log('✅ Notification permissions granted');
+        }
+
+        // Configure notification channel for Android
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('trip-requests-v3', {
+            name: 'Trip Requests',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            sound: 'trip_alert', // Custom sound from android/app/src/main/res/raw/
+            enableVibrate: true,
+          });
+          console.log('✅ Android notification channel configured with custom sound');
+        }
+      } catch (error) {
+        console.error('❌ Error configuring notifications:', error);
+      }
+    };
+
+    configureNotifications();
+  }, []);
+
+  // Function to play notification sound
+  const playNotificationSound = async () => {
+    try {
+      console.log('🔊 Playing notification sound...');
+
+      if (AppState.currentState === 'active') {
+        await playForegroundSound()
+        console.log('✅ Foreground sound played');
+        return
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🚖 New Trip Request!',
+          body: 'You have a new ride request. Tap to view details.',
+          channelId: 'trip-requests-v3',
+          sound: Platform.OS === 'android' ? 'trip_alert' : require('../../assets/sounds/trip_alert.wav'),
+          priority: Notifications.AndroidNotificationPriority.MAX,
+        },
+        trigger: null, // Show immediately
+      });
+      console.log('✅ Notification sound played');
+    } catch (error) {
+      console.error('❌ Error playing notification sound:', error);
+    }
+  };
+
   const handleCancelTrip = () => {
     setCancelModalVisible(true) // Show cancellation modal
   }
@@ -586,13 +1221,38 @@ export default function PendingRequests({ navigation, route }) {
       if (!user_id) return
 
       try {
-        const response = await axios.get(`${api}trips/statuses/${user_id}`)
-        if (response.status === 200) {
-          // console.log("🚀 Trip statuses fetched:", response.data.latestTrip?.statuses);
-          setTripStatusAccepted(response.data.latestTrip?.statuses)
+        const response = await fetch(`${api}trips/statuses/${user_id}`);
+        const data = await response.json();
+        if (response.ok) {
+          // console.log("🚀 Trip statuses fetched:", data.latestTrip?.statuses);
+          const nextStatus = getTripStatus(data.latestTrip) || data.latestTrip?.statuses || null;
+          if (tripStatusAccepted === "accepted" && nextStatus === "pending") {
+            return;
+          }
+          setTripStatusAccepted(nextStatus);
+          
+          // Cache trip statuses
+          await AsyncStorage.setItem(`cachedTripStatuses_${user_id}`, JSON.stringify(data))
+          console.log('Trip statuses cached successfully')
         }
       } catch (error) {
         console.error("⚠️ Error fetching trip statuses:", error)
+        
+        // Load from cache on network failure
+        try {
+          const cached = await AsyncStorage.getItem(`cachedTripStatuses_${user_id}`)
+          if (cached) {
+            const cachedData = JSON.parse(cached)
+            const nextStatus = getTripStatus(cachedData.latestTrip) || cachedData.latestTrip?.statuses || null;
+            if (tripStatusAccepted === "accepted" && nextStatus === "pending") {
+              return;
+            }
+            setTripStatusAccepted(nextStatus)
+            console.log('Loaded trip statuses from cache (offline mode)')
+          }
+        } catch (cacheErr) {
+          console.error('Error loading cached trip statuses:', cacheErr)
+        }
       }
     }
 
@@ -602,7 +1262,7 @@ export default function PendingRequests({ navigation, route }) {
     const intervalId = setInterval(fetchTripStatuses, 5000) // Fetch every 5 seconds
 
     return () => clearInterval(intervalId) // Cleanup interval on unmount
-  }, [user_id])
+  }, [user_id, tripStatusAccepted])
 
 const handleCancel = async (reason) => {
   setCancelReason(reason);
@@ -626,8 +1286,12 @@ const handleCancel = async (reason) => {
         await stopBackgroundLocationTracking();
       }
       
+      // Clear trip state cache
+      await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+      console.log('🗑️ Trip cache cleared after cancellation');
+      
       // Clear ALL state
-      clearTripState();
+      await clearTripState();
       
       // Clear Redux messages
       dispatch(clearMessages());
@@ -647,11 +1311,21 @@ const handleCancel = async (reason) => {
 
   //if trip is declined it should reset user origin
   useEffect(() => {
-    if (tripStatusAccepted === "declined" || tripStatusAccepted === "no-response") {
-      setUserOrigin({ latitude: null, longitude: null })
-      setUserDestination({ latitude: null, longitude: null })
-    }
-  }, [tripStatusAccepted])
+    const handleDeclinedTrip = async () => {
+      if (tripStatusAccepted === "declined" || tripStatusAccepted === "no-response") {
+        setUserOrigin({ latitude: null, longitude: null })
+        setUserDestination({ latitude: null, longitude: null })
+        
+        // Clear trip cache when trip is declined or no-response
+        if (user_id) {
+          await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+          console.log('🗑️ Trip cache cleared - trip declined/no-response');
+        }
+      }
+    };
+    
+    handleDeclinedTrip();
+  }, [tripStatusAccepted, user_id])
 
   //animated button
   const animateButton = () => {
@@ -692,18 +1366,47 @@ const handleCancel = async (reason) => {
       if (!user_id) return
 
       try {
-        const response = await axios.get(`${api}getDriverState?userId=${user_id}`)
-        const { state } = response.data
+        const response = await fetch(`${api}getDriverState?userId=${user_id}`);
+        const data = await response.json();
+        const { state } = data;
 
         if (state === "online") {
           setIsOnline(true)
+          await AsyncStorage.setItem(`driverOnlineStatus_${user_id}`, 'online')
+          console.log('📶 Driver is online - location tracking enabled')
           // startTimer() // Start the timer if driver is already online
         } else {
           setIsOnline(false)
+          await AsyncStorage.setItem(`driverOnlineStatus_${user_id}`, 'offline')
+          console.log('📴 Driver is offline - location tracking disabled')
           stopTimer() // Stop the timer if driver is offline
         }
+        
+        // Cache driver state
+        await AsyncStorage.setItem(`cachedDriverState_${user_id}`, JSON.stringify(data))
+        console.log('Driver state cached successfully')
       } catch (error) {
         console.error("Error fetching driver state:", error.message)
+        
+        // Load from cache on network failure
+        try {
+          const cached = await AsyncStorage.getItem(`cachedDriverState_${user_id}`)
+          if (cached) {
+            const cachedData = JSON.parse(cached)
+            const { state } = cachedData
+            if (state === "online") {
+              setIsOnline(true)
+              await AsyncStorage.setItem(`driverOnlineStatus_${user_id}`, 'online')
+            } else {
+              setIsOnline(false)
+              await AsyncStorage.setItem(`driverOnlineStatus_${user_id}`, 'offline')
+              stopTimer()
+            }
+            console.log('Loaded driver state from cache (offline mode)')
+          }
+        } catch (cacheErr) {
+          console.error('Error loading cached driver state:', cacheErr)
+        }
       }
     }
 
@@ -719,9 +1422,9 @@ const handleCancel = async (reason) => {
 
   //update notifications to pending from firebase
   const handleNotificationClick = () => {
-    if (notificationCount > 0) {
-      setNotificationCount(notificationCount - 1) // Decrease notification count on click
-    }
+    // Reset notification count when driver views pending trips
+    setNotificationCount(0);
+    console.log('🔔 Notification count reset - driver viewing pending trips');
     navigation.navigate("PendingTripsBottomSheet", { tripAccepted: true })
   }
 
@@ -732,6 +1435,7 @@ const handleCancel = async (reason) => {
   // Start Button (Driver → Pickup Location)
   useEffect(() => {
     const fetchRouteDetails = () => {
+      if (tripStatusAccepted !== "accepted" && !tripStarted) return;
       if (!userOrigin.latitude || !driverLocation.latitude || !userDestination.latitude) return
 
       // Calculate distance using Haversine function from Driver to Pickup Location
@@ -776,7 +1480,7 @@ const handleCancel = async (reason) => {
     }
 
     fetchRouteDetails()
-  }, [userOrigin, driverLocation, userDestination, showStartButton])
+  }, [userOrigin, driverLocation, userDestination, showStartButton, tripStatusAccepted, tripStarted])
 
   // End Button (Pickup → Destination)
   useEffect(() => {
@@ -849,12 +1553,16 @@ const handleCancel = async (reason) => {
   }
 
   const handleUpdateDriverState = async () => {
-    const response = await axios.put(api + "driver/updateStatus", {
-      userId: user_id,
-      state: "online",
-    })
+    const response = await fetch(api + "driver/updateStatus", {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user_id,
+        state: "online",
+      }),
+    });
 
-    if (response.status === 200) {
+    if (response.ok) {
       console.log("Driver is online")
     } else {
       console.log("Driver status not updated to online")
@@ -886,8 +1594,12 @@ const handleEndRide = async () => {
     // Stop background tracking
     await stopBackgroundLocationTracking();
     
+    // Clear trip state cache
+    await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+    console.log('🗑️ Trip cache cleared after completion');
+    
     // Clear ALL state BEFORE navigation
-    clearTripState();
+    await clearTripState();
     
     // Clear Redux messages
     dispatch(clearMessages());
@@ -923,7 +1635,7 @@ const handleEndRide = async () => {
     setModalVisible(true);
   }
 
-  const clearTripState = () => {
+  const clearTripState = async () => {
   setTripStarted(false);
   setTripRequest(null);
   setShowStartButton(false);
@@ -934,7 +1646,11 @@ const handleEndRide = async () => {
   setUserOrigin({ latitude: null, longitude: null });
   setUserDestination({ latitude: null, longitude: null });
   
-
+  // Clear trip cache
+  if (user_id) {
+    await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+    console.log('🗑️ Trip state cleared and cache removed');
+  }
   }
   return (
 
@@ -956,6 +1672,7 @@ const handleEndRide = async () => {
         userOrigin={userOrigin}
         userDestination={userDestination}
         tripStart={tripStarted}
+        tripAccepted={tripStatusAccepted === "accepted" || tripStarted}
         mapRef={mapRef}
       />
 
@@ -997,14 +1714,46 @@ const handleEndRide = async () => {
         {/* Bell Button (Existing) */}
         {tripStatusAccepted !== "on-going" && tripStatusAccepted !== "accepted" && (
           <Animated.View style={[{ transform: [{ scale: bellAnimation }] }]}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleNotificationClick}>
-              <Icon type="material-community" name="bell" color="#FFFFFF" size={24} />
-              {notificationCount > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationText}>{notificationCount}</Text>
+            <View style={styles.bellRingWrapper}>
+              {bellCountdown > 0 && (
+                <Svg width={BELL_RING_SIZE} height={BELL_RING_SIZE} style={styles.bellRingSvg}>
+                  <Circle
+                    cx={BELL_RING_SIZE / 2}
+                    cy={BELL_RING_SIZE / 2}
+                    r={BELL_RING_RADIUS}
+                    stroke="rgba(255, 215, 0, 0.3)"
+                    strokeWidth={BELL_RING_STROKE}
+                    fill="none"
+                  />
+                  <Circle
+                    cx={BELL_RING_SIZE / 2}
+                    cy={BELL_RING_SIZE / 2}
+                    r={BELL_RING_RADIUS}
+                    stroke="#FFD700"
+                    strokeWidth={BELL_RING_STROKE}
+                    fill="none"
+                    strokeDasharray={`${BELL_RING_CIRCUMFERENCE} ${BELL_RING_CIRCUMFERENCE}`}
+                    strokeDashoffset={BELL_RING_CIRCUMFERENCE * (1 - Math.min(Math.max(bellCountdown / 40, 0), 1))}
+                    strokeLinecap="round"
+                    rotation={-90}
+                    origin={`${BELL_RING_SIZE / 2}, ${BELL_RING_SIZE / 2}`}
+                  />
+                </Svg>
+              )}
+              <TouchableOpacity style={[styles.actionButton, styles.bellActionButton]} onPress={handleNotificationClick}>
+                <Icon type="material-community" name="bell" color="#FFFFFF" size={24} />
+                {notificationCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationText}>{notificationCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {bellCountdown > 0 && (
+                <View style={styles.bellCountdownBadge}>
+                  <Text style={styles.bellCountdownText}>{bellCountdown}s</Text>
                 </View>
               )}
-            </TouchableOpacity>
+            </View>
           </Animated.View>
         )}
 
@@ -1373,6 +2122,33 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     alignItems: "center",
     gap: 16,
+  },
+  bellRingWrapper: {
+    width: BELL_RING_SIZE,
+    height: BELL_RING_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bellRingSvg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+  bellActionButton: {
+    marginVertical: 0,
+  },
+  bellCountdownBadge: {
+    position: "absolute",
+    bottom: -18,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  bellCountdownText: {
+    color: "#FFD700",
+    fontSize: 11,
+    fontWeight: "700",
   },
   actionButton: {
     width: 56,

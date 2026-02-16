@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react"
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions } from "react-native"
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
-import axios from "axios"
 import { api } from "../../api" // Assuming this path is correct for your project
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useFocusEffect } from "@react-navigation/native"
@@ -165,12 +164,16 @@ const BookingDetails = ({ route, navigation }) => {
           });
 
           try {
-            await axios.put(`${api}helicopter_quotes`, {
-              data: {
-                id: booking.id,
-                status: "Cancelled",
-                user_id: userId,
-              },
+            await fetch(`${api}helicopter_quotes`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                data: {
+                  id: booking.id,
+                  status: "Cancelled",
+                  user_id: userId,
+                },
+              }),
             });
 
             // ✅ Show toast on success

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios'; // For making API requests
 
 const MonthlySubscription = ({ navigation }) => {
   const [currentSubscription, setCurrentSubscription] = useState(null);

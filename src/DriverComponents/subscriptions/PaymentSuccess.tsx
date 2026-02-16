@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import axios from "axios"
 import { api } from "../../../api" // Keeping the original import structure
 
 const PaymentSuccess = ({ route, navigation }) => {
@@ -16,14 +15,19 @@ const PaymentSuccess = ({ route, navigation }) => {
       try {
         console.log("Verifying transaction with reference:", reference)
 
-        const response = await axios.post(api + "payment-callback", {
-          reference,
-        })
+        const response = await fetch(api + "payment-callback", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reference,
+          }),
+        });
+        const data = await response.json();
 
-        console.log("Transaction Verification Response:", response.data)
+        console.log("Transaction Verification Response:", data);
 
-        if (response.data.success) {
-          setTransaction(response.data.transactionDetails)
+        if (data.success) {
+          setTransaction(data.transactionDetails);
         } else {
           console.error("Transaction failed:", response.data.error)
           setTransaction(null)

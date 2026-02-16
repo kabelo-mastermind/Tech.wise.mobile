@@ -11,7 +11,6 @@ import {
   ScrollView,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import axios from "axios"
 import { useSelector } from "react-redux"
 import WebView from "react-native-webview"
 import { api } from "../../../api"
@@ -108,12 +107,17 @@ const ManageSubscription = ({ navigation, route }) => {
   const handleUpdateCard = async () => {
     setIsLoading(true)
     try {
-      const response = await axios.post(api + "update-payment-method", {
-        email,
-        subscription_code: latestSubscriptionCode,
-      })
+      const response = await fetch(api + "update-payment-method", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          subscription_code: latestSubscriptionCode,
+        }),
+      });
+      const data = await response.json();
 
-      const paystackLink = response.data.link
+      const paystackLink = data.link;
 
       if (paystackLink) {
         Linking.openURL(paystackLink) // Open Paystack page
@@ -128,7 +132,7 @@ const ManageSubscription = ({ navigation, route }) => {
     } catch (error) {
       showAlert({
         title: "Error",
-        message: error.response?.data?.error || "Something went wrong",
+        message: error.message || "Something went wrong",
         type: "error",
       })
     }
@@ -206,13 +210,18 @@ const ManageSubscription = ({ navigation, route }) => {
     hideAlert()
     setIsLoading(true)
     try {
-      const cancelResponse = await axios.post(api + "cancel-subscription", {
-        code: latestSubscriptionCode,
-        token: subscription.email_token,
-      })
+      const response = await fetch(api + "cancel-subscription", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: latestSubscriptionCode,
+          token: subscription.email_token,
+        }),
+      });
+      const cancelData = await response.json();
 
-      if (cancelResponse.status === 200 && subscription.status === "active") {
-        const { message } = cancelResponse.data
+      if (response.ok && subscription.status === "active") {
+        const { message } = cancelData;
         showAlert({
           title: "Success",
           message: /*message ||*/ "Subscription canceled successful. Please choose a new plan.",

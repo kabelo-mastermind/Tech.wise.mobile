@@ -18,7 +18,6 @@ import { Ionicons } from "@expo/vector-icons"
 import { useSelector } from "react-redux"
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { storage } from "../../firebase"
-import axios from "axios"
 import { api } from "../../api"
 import { Icon } from "react-native-elements"
 import CustomDrawer from "../components/CustomDrawer"
@@ -131,9 +130,14 @@ const UploadDocuments = ({ navigation }) => {
         last_online_timestamp: new Date().toISOString(),
       }
 
-      const response = await axios.post(api + "driver_details", data)
+      const response = await fetch(api + "driver_details", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const responseData = await response.json();
 
-      console.log("Document data successfully saved:", response.data)
+      console.log("Document data successfully saved:", responseData);
       Alert.alert("Success", "Documents uploaded and data saved successfully!", [
         {
           text: "Continue",

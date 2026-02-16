@@ -116,7 +116,10 @@ const TripRequestModal = ({ isVisible, request, onClose, onTripUpdate, hideActio
       emitAcceptTrip(tripId, customerId)
       onTripUpdate(tripId) // Remove trip from the pending list
       onClose()
-      dispatch(setSelectedRequest(selectedRequest));
+      dispatch(setSelectedRequest({
+        ...selectedRequest,
+        statuses: "accepted",
+      }));
 
       // navigation.navigate("PendingRequests", { tripAccepted: true, tripData: selectedRequest })
     } catch (error) {

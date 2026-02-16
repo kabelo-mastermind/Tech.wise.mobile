@@ -4,7 +4,6 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Sta
 import { ArrowLeft, HelpCircle, Receipt, User } from "lucide-react-native"
 import MapComponent from "../components/MapComponent"
 import { api } from "../../api"
-import axios from "axios"
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
@@ -292,11 +291,15 @@ export default function TripDetails({ navigation, route }) {
       console.log("✅ Uploaded to Firebase:", downloadURL);
 
       // Send to backend for email dispatch
-      await axios.post(`${api}send-receipt`, {
-        email: userDriver?.email,
-        name: userDriver?.name,
-        tripId,
-        receiptUrl: downloadURL,
+      await fetch(`${api}send-receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userDriver?.email,
+          name: userDriver?.name,
+          tripId,
+          receiptUrl: downloadURL,
+        }),
       });
       console.log("✅ Receipt email request sent to backend.");
       alert("Receipt generated and sent to your email successfully!");
@@ -314,8 +317,8 @@ export default function TripDetails({ navigation, route }) {
       setLoadingData(true)
       try {
         // 1. Fetch trip details using tripId
-        const tripRes = await axios.get(`${api}trip/${tripId}`)
-        const fetchedTrip = tripRes.data
+        const tripRes = await fetch(`${api}trip/${tripId}`);
+        const fetchedTrip = await tripRes.json();
         setTrip(fetchedTrip)
         console.log("Fetched Trip Data:", fetchedTrip)
 
