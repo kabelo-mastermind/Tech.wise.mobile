@@ -109,8 +109,13 @@ const UploadDocuments = ({ navigation }) => {
       setIsSubmitting(false)
     } catch (error) {
       setIsSubmitting(false)
-      console.error("Submission error:", error)
-      Alert.alert("Error", "Something went wrong while submitting the documents.")
+      // Improved error logging for debugging
+      if (error instanceof Error) {
+        console.error("Submission error:", error.message, error.stack)
+      } else {
+        console.error("Submission error (non-Error object):", error)
+      }
+      Alert.alert("Error", `Something went wrong while submitting the documents.\n${error && error.message ? error.message : ''}`)
     }
   }
 

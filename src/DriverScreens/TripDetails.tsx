@@ -485,8 +485,18 @@ export default function TripDetails({ navigation, route }) {
       <ScrollView style={styles.scrollView}>
         {/* Map */}
         <View style={styles.mapContainer}>
-          {origin || destination ? (
-            <MapComponent mapRef={mapRef} userOrigin={origin} userDestination={destination} hideNavigation={true} />
+          {origin && destination ? (
+            <MapComponent
+              mapRef={mapRef}
+              userOrigin={origin}
+              userDestination={destination}
+              driverLocation={origin}
+              hideNavigation={true}
+              tripAccepted={true}
+              tripStart={true}
+              showDriverMarker={false}
+              showTripDetails={false}
+            />
           ) : (
             <View style={styles.noMapContainer}>
               <Text style={styles.noMapText}>Map data not available</Text>

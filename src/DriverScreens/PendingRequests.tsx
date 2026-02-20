@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { StyleSheet, View, Dimensions, TouchableOpacity, BackHandler, Text, Animated, Linking, Alert, Platform, AppState } from "react-native"
+import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { Icon } from "react-native-elements"
 import { colors } from "../global/styles"
@@ -807,89 +808,105 @@ export default function PendingRequests({ navigation, route }) {
 
   // socket notifications
   useEffect(() => {
-    if (!user_id) return
+    if (!user_id) return;
 
-    const userType = "driver"
-    connectSocket(user_id, userType) // Ensure the driver is connected
+    const userType = "driver";
+    let isMounted = true;
 
-    listenToNewTripRequests(async (tripData) => {
-      if (!tripData) {
-        console.error("❌ tripData is undefined or null on frontend!")
-        return
-      }
+    const setupSocket = async () => {
+      await connectSocket(user_id, userType);
+      // Wait for socket to be connected before registering listeners
+      const { default: socketIOClient } = await import("socket.io-client");
+      const config = require("../configSocket/config").default;
+      const socket = socketIOClient(config.SOCKET_URL);
 
-      // Refresh notification count based on latest pending trips
-      try {
-        const response = await fetch(`${api}/driverTrips?driverId=${user_id}`);
-        const data = await response.json();
-        const tripsList = data.trips || [];
-        const now = new Date().getTime();
+      socket.on("connect", () => {
+        if (!isMounted) return;
 
-        const pendingTrips = tripsList.filter(trip => {
-          if (!isTripPending(trip)) return false;
-
-          if (trip.currentDate) {
-            const tripTime = new Date(trip.currentDate).getTime();
-            const ageInSeconds = (now - tripTime) / 1000;
-            if (ageInSeconds > 40) {
-              return false;
-            }
+        listenToNewTripRequests(async (tripData) => {
+          if (!tripData) {
+            console.error("❌ tripData is undefined or null on frontend!");
+            return;
           }
 
-          return true;
+          // Refresh notification count based on latest pending trips
+          try {
+            const response = await fetch(`${api}/driverTrips?driverId=${user_id}`);
+            const data = await response.json();
+            const tripsList = data.trips || [];
+            const now = new Date().getTime();
+
+            const pendingTrips = tripsList.filter(trip => {
+              if (!isTripPending(trip)) return false;
+
+              if (trip.currentDate) {
+                const tripTime = new Date(trip.currentDate).getTime();
+                const ageInSeconds = (now - tripTime) / 1000;
+                if (ageInSeconds > 40) {
+                  return false;
+                }
+              }
+
+              return true;
+            });
+
+            const currentTripCount = pendingTrips.length;
+            updateBellCountdownFromTrips(pendingTrips);
+            setNotificationCount(currentTripCount);
+            lastTripCountRef.current = currentTripCount;
+            console.log(`🔔 Notification count refreshed (socket): ${currentTripCount}`);
+          } catch (error) {
+            console.error('❌ Error refreshing pending trips count (socket):', error);
+          }
+
+          // Play notification sound
+          playNotificationSound();
+
+          // Store the trip data
+          setTripRequest(tripData);
+
+          // Dispatch user details to Redux
+          dispatch(
+            setTripData({
+              id: tripData.tripId, // Make sure we're using the correct property
+              customer_id: tripData.user_id,
+            }),
+          );
         });
 
-        const currentTripCount = pendingTrips.length;
-        updateBellCountdownFromTrips(pendingTrips);
-        setNotificationCount(currentTripCount);
-        lastTripCountRef.current = currentTripCount;
-        console.log(`🔔 Notification count refreshed (socket): ${currentTripCount}`);
-      } catch (error) {
-        console.error('❌ Error refreshing pending trips count (socket):', error);
-      }
+        listenCancelTrip(async (tripData) => {
+          // Clear trip state cache when customer cancels
+          await AsyncStorage.removeItem(`activeTripState_${user_id}`);
+          console.log('🗑️ Trip cache cleared - customer cancelled trip');
+          // Clear all state when trip is canceled
+          await clearTripState();
+          handleUpdateDriverState();
+          setShowCancelAlert(true);
+        });
 
-      // Play notification sound
-      playNotificationSound();
+        listenToChatMessages((messageData) => {
+          // Increment notification count
+          setNotificationCountChat((prevCount) => prevCount + 1);
+          dispatch(
+            addMessage({
+              id: Date.now().toString(),
+              senderId: tripRequestSocket?.customerId,
+              receiverId: user_id,
+              tripId: tripRequestSocket?.tripId,
+              message: messageData?.message,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        });
+      });
+    };
 
-      // Store the trip data
-      setTripRequest(tripData)
+    setupSocket();
 
-      // Dispatch user details to Redux
-      dispatch(
-        setTripData({
-          id: tripData.tripId, // Make sure we're using the correct property
-          customer_id: tripData.user_id,
-        }),
-      )
-    })
-    console.log("Trip Request Socket Data::::::::::::::::::::", tripRequestSocket);
-
-  listenCancelTrip(async (tripData) => {
-  // Clear trip state cache when customer cancels
-  await AsyncStorage.removeItem(`activeTripState_${user_id}`);
-  console.log('🗑️ Trip cache cleared - customer cancelled trip');
-  
-  // Clear all state when trip is canceled
-  await clearTripState();
-  handleUpdateDriverState();
-  setShowCancelAlert(true);
-});
-
-    listenToChatMessages((messageData) => {
-      // Increment notification count
-      setNotificationCountChat((prevCount) => prevCount + 1)
-      dispatch(
-        addMessage({
-          id: Date.now().toString(),
-          senderId: tripData?.customerId,
-          receiverId: user_id,
-          tripId: tripData?.tripId,
-          message: messageData?.message,
-          timestamp: new Date().toISOString(),
-        })
-      );
-    })
-  }, [user_id])
+    return () => {
+      isMounted = false;
+    };
+  }, [user_id]);
 
   // Polling mechanism to check for pending trips (backup for when socket is offline)
   useEffect(() => {
@@ -1098,17 +1115,35 @@ export default function PendingRequests({ navigation, route }) {
   }
 
 
+  // Enhanced navigation: use current GPS as origin, check offline
   const openNavigation = async (origin, destination, app = 'google') => {
-    const { latitude: oLat, longitude: oLng } = origin;
-    const { latitude: dLat, longitude: dLng } = destination;
+    // 1. Check network status
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      Alert.alert('No Internet', 'You are offline. Please connect to the internet to use navigation.');
+      return;
+    }
 
+    // 2. Get current location for origin
+    let oLat, oLng;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') throw new Error('Location permission denied');
+      const currentLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      oLat = currentLoc.coords.latitude;
+      oLng = currentLoc.coords.longitude;
+    } catch (e) {
+      // fallback to passed origin if GPS fails
+      oLat = origin?.latitude;
+      oLng = origin?.longitude;
+    }
+    const dLat = destination?.latitude;
+    const dLng = destination?.longitude;
     if (!oLat || !oLng || !dLat || !dLng) {
       Alert.alert('Invalid locations');
       return;
     }
-
     let url = '';
-
     if (app === 'google') {
       url = `https://www.google.com/maps/dir/?api=1&origin=${oLat},${oLng}&destination=${dLat},${dLng}&travelmode=driving`;
     } else if (app === 'waze') {
@@ -1117,7 +1152,6 @@ export default function PendingRequests({ navigation, route }) {
       Alert.alert('Unsupported navigation app');
       return;
     }
-
     try {
       const supported = await Linking.canOpenURL(url);
       if (supported) {
@@ -1789,34 +1823,43 @@ const handleEndRide = async () => {
         </TouchableOpacity>
       )}
 
-      {/* Navigation Buttons - Only show when trip is accepted but not completed */}
-{(tripStatusAccepted === "accepted" || tripStarted) && (
-  <View style={styles.navButtonsContainer}>
-    <TouchableOpacity
-      style={[styles.navButton, styles.googleButton]}
-      onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
-    >
-      <Ionicons name="logo-google" size={20} color="white" />
-      <Text style={styles.navButtonText}>Maps</Text>
-    </TouchableOpacity>
+      {/* Navigation Buttons - Only show when trip is accepted or ongoing */}
+      {(tripStatusAccepted === "accepted" || tripStarted) && (
+        <View style={styles.navButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.navButton, styles.googleButton]}
+            onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'google')}
+          >
+            <Ionicons name="logo-google" size={20} color="white" />
+            <Text style={styles.navButtonText}>Maps</Text>
+          </TouchableOpacity>
 
-    <TouchableOpacity
-      style={[styles.customerNav, styles.customerButton]}
-      onPress={() => handleViewCustomer()}
-    >
-      <Ionicons name="person" size={20} color="white" />
-    </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.customerNav, styles.customerButton]}
+            onPress={() => handleViewCustomer()}
+          >
+            <Ionicons name="person" size={20} color="white" />
+          </TouchableOpacity>
 
-    <TouchableOpacity
-      style={[styles.navButton, styles.wazeButton]}
-      onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
-    >
-      <Ionicons name="car-sport" size={20} color="white" />
-      <Text style={styles.navButtonText}>Waze</Text>
-    </TouchableOpacity>
-  </View>
-)}
+          <TouchableOpacity
+            style={[styles.navButton, styles.wazeButton]}
+            onPress={() => openNavigation(driverLocation, tripStarted ? userDestination : userOrigin, 'waze')}
+          >
+            <Ionicons name="car-sport" size={20} color="white" />
+            <Text style={styles.navButtonText}>Waze</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
+      {/* Floating SOS Button - bottom right */}
+      {(tripStatusAccepted === "accepted" || tripStarted) && (
+        <TouchableOpacity
+          style={styles.sosButton}
+          onPress={() => Alert.alert('SOS', 'Emergency assistance requested!')}
+        >
+          <Ionicons name="alert-circle" size={28} color="white" />
+        </TouchableOpacity>
+      )}
 
       {/* Trip Cancellation Modal */}
       <TripCancellationModal isVisible={cancelModalVisible} onClose={handleCloseModal} onCancel={handleCancel} />
@@ -2030,6 +2073,23 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontWeight: '500',
     fontSize: 14,
+  },
+  sosButton: {
+    position: 'absolute',
+    top: 120,
+    right: 14,
+    backgroundColor: '#FF3B30',
+    borderRadius: 32,
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    zIndex: 100,
   },
   profilePictureContainer: {
     position: "absolute",

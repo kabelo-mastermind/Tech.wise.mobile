@@ -356,11 +356,33 @@ useEffect(() => {
       const securityLevel = await LocalAuthentication.getEnrolledLevelAsync();
       console.log('🔐 Hardware available:', hasHardware, '| Security level:', securityLevel);
 
-      // Attempt authentication directly (works with biometric, PIN, pattern, password)
+      if (!hasHardware || !supportedTypes || supportedTypes.length === 0) {
+        Alert.alert(
+          'Device Not Supported',
+          'Your phone does not support Face ID or fingerprint authentication.\n\nTo use Nthome as a driver, please update your phone or use a device that supports biometric security. This is required to protect your account and ensure only the real driver can go online.',
+          [
+            { text: 'OK' }
+          ]
+        );
+        return false;
+      }
+
+      // Show a clear message before starting biometric authentication
+      await new Promise((resolve) => {
+        Alert.alert(
+          'Security Verification Required',
+          'For your safety and to protect your account, Nthome requires biometric authentication (Face ID or Fingerprint) before you can go online.\n\nThis helps us verify that you are the real owner of this account. Please note: Nthome support may review biometric records to ensure only the registered driver is using this app. Do not share your app or account with others.',
+          [
+            { text: 'Continue', onPress: resolve }
+          ],
+          { cancelable: false }
+        );
+      });
+
+      // Attempt authentication directly (biometric only: Face ID or Fingerprint)
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: '🔐 Authenticate to go online',
-        fallbackLabel: 'Use Device Credentials',
-        disableDeviceFallback: false, // Allow fallback to PIN/pattern/password
+        promptMessage: '🔐 Authenticate with Face ID or Fingerprint',
+        disableDeviceFallback: true, // Only allow biometric, no PIN/pattern/password
         cancelLabel: 'Cancel',
       });
 
@@ -372,20 +394,24 @@ useEffect(() => {
         return false;
       } else if (result.error === 'not_enrolled' || result.error === 'lockout' || result.error === 'passcode_not_set') {
         Alert.alert(
-          '🔒 No Authentication Set Up',
-          'For security purposes, you must set up device authentication before going online.\n\nPlease set up:\n• Fingerprint\n• Face ID\n• PIN, pattern, or password\n\nin your device settings.',
+          '🔒 No Biometric Authentication Set Up',
+          'For security purposes, you must set up biometric authentication before going online.\n\nPlease set up:\n• Fingerprint\n• Face ID\n\nin your device settings.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: openSecuritySettings }
+            { text: 'Go to Settings', onPress: openSecuritySettings }
           ]
         );
         return false;
       } else {
-        console.log('❌ Authentication failed:', result.error);
+        // Log the full result object for debugging
+        console.log('❌ Authentication failed:', result);
         Alert.alert(
           'Authentication Failed',
-          'You must authenticate to go online as a driver.',
-          [{ text: 'OK' }]
+          `Authentication failed.\nError: ${result.error || 'Unknown error'}\nResult: ${JSON.stringify(result)}`,
+          [
+            { text: 'OK' },
+            { text: 'Go to Settings', onPress: openSecuritySettings }
+          ]
         );
         return false;
       }
@@ -470,6 +496,11 @@ useEffect(() => {
 
   const [loadingStats, setLoadingStats] = useState(true)
   const [errorStats, setErrorStats] = useState(null)
+  const [ratingBreakdown, setRatingBreakdown] = useState({
+    daily: { counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }, total: 0 },
+    weekly: { counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }, total: 0 },
+    monthly: { counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }, total: 0 },
+  })
 
   const MAX_RETRIES = 3; // Limit retry attempts
   // Fetch driver stats from the API and update them on dashboard
@@ -564,6 +595,7 @@ useEffect(() => {
             ridesDeclined,
             earnings: `R${earnings.toFixed(2)}`,
             ratings: `${avgRating}/5`,
+            rated_count: ratings.length,
             total_trips: ridesAccepted + ridesDeclined,
           };
         };
@@ -589,6 +621,30 @@ useEffect(() => {
           daily: dailyStats,
           weekly: weeklyStats,
           monthly: monthlyStats,
+        })
+
+        // Compute rating breakdown for each period
+        const computeBreakdown = (trips) => {
+          const rated = trips.filter((t) => t.driver_ratings !== null && t.driver_ratings !== undefined && !isNaN(Number(t.driver_ratings)) && Number(t.driver_ratings) > 0)
+          const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+          rated.forEach((t) => {
+            const raw = Number.parseFloat(t.driver_ratings)
+            if (isNaN(raw)) return
+            const star = Math.min(5, Math.max(1, Math.round(raw)))
+            counts[star] = (counts[star] || 0) + 1
+          })
+          const total = rated.length
+          return { counts, total }
+        }
+
+        const dailyBreakdown = computeBreakdown(filterTrips((d) => isSameDay(d, today)))
+        const weeklyBreakdown = computeBreakdown(filterTrips((d) => isSameWeek(d, today)))
+        const monthlyBreakdown = computeBreakdown(filterTrips((d) => isSameMonth(d, today)))
+
+        setRatingBreakdown({
+          daily: dailyBreakdown,
+          weekly: weeklyBreakdown,
+          monthly: monthlyBreakdown,
         })
 
         setPreviousStats({
@@ -871,29 +927,37 @@ useEffect(() => {
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Total Rated Trips</Text>
-                <Text style={styles.detailValue}>{currentStats.ridesAccepted || 0}</Text>
+                <Text style={styles.detailValue}>{currentStats.rated_count || 0}</Text>
               </View>
             </View>
 
             <View style={styles.detailSection}>
               <Text style={styles.detailSectionTitle}>Rating Breakdown</Text>
               <View style={styles.ratingBreakdown}>
-                {[5, 4, 3, 2, 1].map((star) => (
-                  <View key={star} style={styles.ratingRow}>
-                    <View style={styles.starContainer}>
-                      {[...Array(star)].map((_, i) => (
-                        <Icon key={i} name="star" type="material" color="#FFD700" size={16} />
-                      ))}
-                      {[...Array(5 - star)].map((_, i) => (
-                        <Icon key={i} name="star-border" type="material" color="#E5E7EB" size={16} />
-                      ))}
-                    </View>
-                    <View style={styles.ratingBar}>
-                      <View style={[styles.ratingBarFill, { width: `${Math.random() * 100}%` }]} />
-                    </View>
-                    <Text style={styles.ratingPercentage}>{Math.floor(Math.random() * 30)}%</Text>
-                  </View>
-                ))}
+                {(() => {
+                  const breakdown = ratingBreakdown[view] || { counts: { 5:0,4:0,3:0,2:0,1:0 }, total: 0 }
+                  const total = breakdown.total || 0
+                  return [5,4,3,2,1].map((star) => {
+                    const count = breakdown.counts[star] || 0
+                    const percentage = total > 0 ? (count / total) * 100 : 0
+                    return (
+                      <View key={star} style={styles.ratingRow}>
+                        <View style={styles.starContainer}>
+                          {[...Array(star)].map((_, i) => (
+                            <Icon key={i} name="star" type="material" color="#FFD700" size={16} />
+                          ))}
+                          {[...Array(5 - star)].map((_, i) => (
+                            <Icon key={i} name="star-border" type="material" color="#E5E7EB" size={16} />
+                          ))}
+                        </View>
+                        <View style={styles.ratingBar}>
+                          <View style={[styles.ratingBarFill, { width: `${percentage.toFixed(0)}%` }]} />
+                        </View>
+                        <Text style={styles.ratingPercentage}>{count} ({Math.round(percentage)}%)</Text>
+                      </View>
+                    )
+                  })
+                })()}
               </View>
             </View>
 

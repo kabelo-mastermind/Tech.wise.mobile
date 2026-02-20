@@ -70,7 +70,11 @@ export default function MyRidesScreen({ navigation }) {
       setIsLoading(true)
       const res = await fetch(api + `tripHistory/${customerId}?status=${status}`);
       const data = await res.json();
-      setTrips(data)
+      // Sort trips by requestDate descending (latest first)
+      const sortedData = Array.isArray(data)
+        ? data.slice().sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate))
+        : [];
+      setTrips(sortedData)
       setHasError(false)
     } catch (err) {
       setHasError(true)

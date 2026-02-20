@@ -44,8 +44,9 @@ const ServiceCard = ({ title, description, isComingSoon, onPress, index }) => {
         return "airplane"
       case "NthomeFood":
         return "restaurant"
-      case "NthomeShop":
-        return "cart"
+      // Removed NthomeShop
+      case "NthomeVan":
+        return "car"
       default:
         return "apps"
     }
@@ -127,6 +128,12 @@ const NthomeServicesScreen = ({ navigation }) => {
     ])
   }
 
+  const handleVanPress = () => {
+    Alert.alert("Coming Soon", "NthomeVan service will be available soon!", [
+      { text: "OK", onPress: () => console.log("OK Pressed") },
+    ])
+  }
+
   // Chatbot handlers
   const openChatBot = () => {
     setChatBotVisible(true)
@@ -201,24 +208,25 @@ const NthomeServicesScreen = ({ navigation }) => {
             <ServiceCard
               title="NthomeAir"
               description="Elevate your travel experience with premium air travel."
-              isComingSoon={false}
-              onPress={handleAirPress}
+              isComingSoon={true}
+              onPress={() => Alert.alert("Coming Soon", "NthomeAir service will be available soon!")}
               index={1}
+            />
+            <ServiceCard
+              title="NthomeVan"
+              description="Spacious van rides for groups and cargo."
+              isComingSoon={true}
+              onPress={() => Alert.alert("Coming Soon", "NthomeVan service will be available soon!")}
+              index={2}
             />
             <ServiceCard
               title="NthomeFood"
               description="Delicious meals, delivered to your doorstep in minutes."
               isComingSoon={true}
               onPress={handleFoodPress}
-              index={2}
-            />
-            <ServiceCard
-              title="NthomeShop"
-              description="Shop your favorite items with ease and fast delivery."
-              isComingSoon={true}
-              onPress={handleShopPress}
               index={3}
             />
+            {/* NthomeShop removed */}
           </View>
 
           <View style={styles.infoSection}>

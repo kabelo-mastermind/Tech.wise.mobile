@@ -198,6 +198,8 @@ const MapComponent = ({
   mapRef: externalMapRef,
   hideNavigation = false,
   driverSpeed = null,
+  showDriverMarker = true,
+  showTripDetails = true,
 }) => {
   const internalMapRef = useRef(null)
   const mapRef = externalMapRef || internalMapRef
@@ -221,6 +223,7 @@ const MapComponent = ({
   const [routeProgress, setRouteProgress] = useState(0)
   const [cameraMode, setCameraMode] = useState(CAMERA_MODES.FOLLOW)
   const [isUserInteracting, setIsUserInteracting] = useState(false)
+  const [userToggledCameraMode, setUserToggledCameraMode] = useState(false)
   const [routeError, setRouteError] = useState(null)
 
   // Smooth animation refs
@@ -494,15 +497,25 @@ const MapComponent = ({
       userOrigin.latitude !== 0 &&
       userOrigin.longitude !== 0;
 
-    if (!tripStarted && hasPickup && !isUserInteracting) {
-      setCameraMode(CAMERA_MODES.OVERVIEW);
-      return;
-    }
+    // Only auto-switch if user hasn't manually toggled
+    if (!userToggledCameraMode) {
+      if (!tripStarted && hasPickup && !isUserInteracting) {
+        setCameraMode(CAMERA_MODES.OVERVIEW);
+        return;
+      }
 
-    if (tripStarted && cameraMode === CAMERA_MODES.OVERVIEW) {
-      setCameraMode(CAMERA_MODES.FOLLOW);
+      if (tripStarted && cameraMode === CAMERA_MODES.OVERVIEW) {
+        setCameraMode(CAMERA_MODES.FOLLOW);
+      }
     }
-  }, [mapReady, driverLocation, userOrigin, tripStarted, isUserInteracting, cameraMode, tripAccepted]);
+  }, [mapReady, driverLocation, userOrigin, tripStarted, isUserInteracting, cameraMode, tripAccepted, userToggledCameraMode]);
+
+  // Reset userToggledCameraMode when trip ends or new trip starts
+  useEffect(() => {
+    if (!tripStarted) {
+      setUserToggledCameraMode(false);
+    }
+  }, [tripStarted]);
 
   const handleMapReady = () => {
     setMapReady(true);
@@ -592,6 +605,7 @@ const MapComponent = ({
     const nextIndex = (currentIndex + 1) % modes.length;
     setCameraMode(modes[nextIndex]);
     setIsUserInteracting(false);
+    setUserToggledCameraMode(true);
   };
 
   const getCameraModeIcon = () => {
@@ -649,8 +663,7 @@ const MapComponent = ({
 
   // Custom driver marker with smooth animations
   const AnimatedDriverMarker = () => {
-    if (!currentMarkerCoordinate) return null;
-
+    if (!showDriverMarker || !currentMarkerCoordinate) return null;
     return (
       <Marker
         coordinate={currentMarkerCoordinate}
@@ -800,7 +813,7 @@ const MapComponent = ({
       </TouchableOpacity>
 
       {/* Trip Details Card */}
-      {distance && duration && (
+      {showTripDetails && distance && duration && (
         <Animated.View style={[
           styles.tripDetailsCard, 
           { height: tripDetailsHeight },
